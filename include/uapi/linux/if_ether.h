@@ -154,6 +154,7 @@
 #define ETH_P_MCTP	0x00FA		/* Management component transport
 					 * protocol packets
 					 */
+#define ETH_P_LORA	0x00FB		/* LoRa				*/
 
 /*
  *	This is an Ethernet frame header.
