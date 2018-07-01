@@ -13,6 +13,11 @@
 #include <linux/of_device.h>
 #include <linux/spi/spi.h>
 
+#define REG_CLK_SELECT		0x10
+
+#define REG_CLK_SELECT_TX_DAC_CLK_SELECT_CLK_IN	BIT(0)
+#define REG_CLK_SELECT_CLK_OUT			BIT(1)
+
 static int sx1257_write(struct spi_device *spi, u8 reg, u8 val)
 {
 	u8 buf[2];
@@ -43,13 +48,14 @@ static int sx1257_probe(struct spi_device *spi)
 		dev_info(&spi->dev, "SX125x version: %02x\n", (unsigned)val);
 	}
 
-	ret = sx1257_write(spi, 0x10, 1 /* + 2 */);
+	ret = sx1257_write(spi, REG_CLK_SELECT,
+		/* REG_CLK_SELECT_CLK_OUT | */ REG_CLK_SELECT_TX_DAC_CLK_SELECT_CLK_IN);
 	if (ret) {
 		dev_err(&spi->dev, "clk write failed\n");
 		return ret;
 	}
 
-	dev_info(&spi->dev, "clk written\n");
+	dev_dbg(&spi->dev, "clk written\n");
 
 	if (true) {
 		ret = sx1257_write(spi, 0x26, 13 + 2 * 16);
