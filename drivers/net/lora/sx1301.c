@@ -21,6 +21,9 @@
 
 #define REG_PAGE_RESET			0
 #define REG_VERSION			1
+#define REG_GPIO_SELECT_INPUT		27
+#define REG_GPIO_SELECT_OUTPUT		28
+#define REG_GPIO_MODE			29
 #define REG_2_SPI_RADIO_A_DATA		33
 #define REG_2_SPI_RADIO_A_DATA_READBACK	34
 #define REG_2_SPI_RADIO_A_ADDR		35
@@ -395,9 +398,47 @@ static int sx1301_probe(struct spi_device *spi)
 		goto err_radio_b_register;
 	}
 
+	/* GPIO */
+
+	ret = sx1301_read(spi, REG_GPIO_MODE, &val);
+	if (ret) {
+		dev_err(&spi->dev, "GPIO mode read failed\n");
+		goto err_read_gpio_mode;
+	}
+
+	val |= GENMASK(4, 0);
+
+	ret = sx1301_write(spi, REG_GPIO_MODE, val);
+	if (ret) {
+		dev_err(&spi->dev, "GPIO mode write failed\n");
+		goto err_write_gpio_mode;
+	}
+
+	ret = sx1301_read(spi, REG_GPIO_SELECT_OUTPUT, &val);
+	if (ret) {
+		dev_err(&spi->dev, "GPIO select output read failed\n");
+		goto err_read_gpio_select_output;
+	}
+
+	val &= ~GENMASK(3, 0);
+	val |= 2;
+
+	ret = sx1301_write(spi, REG_GPIO_SELECT_OUTPUT, val);
+	if (ret) {
+		dev_err(&spi->dev, "GPIO select output write failed\n");
+		goto err_write_gpio_select_output;
+	}
+
+	/* TODO LBT */
+
 	dev_info(&spi->dev, "SX1301 module probed\n");
 
 	return 0;
+
+err_write_gpio_select_output:
+err_read_gpio_select_output:
+err_write_gpio_mode:
+err_read_gpio_mode:
 err_radio_b_register:
 	spi_controller_put(priv->radio_b_ctrl);
 err_radio_b_alloc:
