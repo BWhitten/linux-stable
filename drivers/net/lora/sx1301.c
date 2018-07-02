@@ -56,19 +56,31 @@ struct sx1301_priv {
 	struct spi_controller *radio_a_ctrl, *radio_b_ctrl;
 };
 
-static int sx1301_read(struct spi_device *spi, u8 reg, u8 *val)
+static int sx1301_read_burst(struct spi_device *spi, u8 reg, u8 *val, size_t len)
 {
 	u8 addr = reg & 0x7f;
-	return spi_write_then_read(spi, &addr, 1, val, 1);
+	return spi_write_then_read(spi, &addr, 1, val, len);
+}
+
+static int sx1301_read(struct spi_device *spi, u8 reg, u8 *val)
+{
+	return sx1301_read_burst(spi, reg, val, 1);
+}
+
+static int sx1301_write_burst(struct spi_device *spi, u8 reg, const u8 *val, size_t len)
+{
+	u8 addr = reg | BIT(7);
+	struct spi_transfer xfr[2] = {
+		{ .tx_buf = &addr, .len = 1 },
+		{ .tx_buf = val, .len = len },
+	};
+
+	return spi_sync_transfer(spi, xfr, 2);
 }
 
 static int sx1301_write(struct spi_device *spi, u8 reg, u8 val)
 {
-	u8 buf[2];
-
-	buf[0] = reg | BIT(7);
-	buf[1] = val;
-	return spi_write(spi, buf, 2);
+	return sx1301_write_burst(spi, reg, &val, 1);
 }
 
 static int sx1301_page_switch(struct spi_device *spi, u8 page)
