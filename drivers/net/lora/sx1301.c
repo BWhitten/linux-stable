@@ -281,19 +281,19 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, REG_PAGE_RESET, 0);
 	if (ret) {
 		dev_err(&spi->dev, "page/reset write failed\n");
-		return ret;
+		goto err_init_page;
 	}
 
 	ret = sx1301_soft_reset(spi);
 	if (ret) {
 		dev_err(&spi->dev, "soft reset failed\n");
-		return ret;
+		goto err_soft_reset;
 	}
 
 	ret = sx1301_read(spi, 16, &val);
 	if (ret) {
 		dev_err(&spi->dev, "16 read failed\n");
-		return ret;
+		goto err_read_global_en_0;
 	}
 
 	val &= ~REG_16_GLOBAL_EN;
@@ -301,13 +301,13 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, 16, val);
 	if (ret) {
 		dev_err(&spi->dev, "16 write failed\n");
-		return ret;
+		goto err_write_global_en_0;
 	}
 
 	ret = sx1301_read(spi, 17, &val);
 	if (ret) {
 		dev_err(&spi->dev, "17 read failed\n");
-		return ret;
+		goto err_read_clk32m_0;
 	}
 
 	val &= ~REG_17_CLK32M_EN;
@@ -315,7 +315,7 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, 17, val);
 	if (ret) {
 		dev_err(&spi->dev, "17 write failed\n");
-		return ret;
+		goto err_write_clk32m_0;
 	}
 
 	ret = sx1301_page_read(spi, 2, 43, &val);
@@ -385,6 +385,7 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = devm_spi_register_controller(&spi->dev, priv->radio_a_ctrl);
 	if (ret) {
 		dev_err(&spi->dev, "radio A SPI register failed\n");
+		spi_controller_put(priv->radio_a_ctrl);
 		goto err_radio_a_register;
 	}
 
@@ -409,6 +410,7 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = devm_spi_register_controller(&spi->dev, priv->radio_b_ctrl);
 	if (ret) {
 		dev_err(&spi->dev, "radio B SPI register failed\n");
+		spi_controller_put(priv->radio_b_ctrl);
 		goto err_radio_b_register;
 	}
 
@@ -454,11 +456,15 @@ err_read_gpio_select_output:
 err_write_gpio_mode:
 err_read_gpio_mode:
 err_radio_b_register:
-	spi_controller_put(priv->radio_b_ctrl);
 err_radio_b_alloc:
 err_radio_a_register:
-	spi_controller_put(priv->radio_a_ctrl);
 err_radio_a_alloc:
+err_write_clk32m_0:
+err_read_clk32m_0:
+err_write_global_en_0:
+err_read_global_en_0:
+err_soft_reset:
+err_init_page:
 	free_loradev(netdev);
 err_alloc_loradev:
 err_version:
