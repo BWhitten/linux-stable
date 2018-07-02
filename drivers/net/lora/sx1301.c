@@ -380,8 +380,6 @@ static int sx1301_probe(struct spi_device *spi)
 	radio->regs = REG_2_SPI_RADIO_A_DATA;
 	radio->parent = spi;
 
-	dev_info(&spi->dev, "registering radio A SPI\n");
-
 	ret = devm_spi_register_controller(&spi->dev, priv->radio_a_ctrl);
 	if (ret) {
 		dev_err(&spi->dev, "radio A SPI register failed\n");
@@ -404,8 +402,6 @@ static int sx1301_probe(struct spi_device *spi)
 	radio->page = 2;
 	radio->regs = REG_2_SPI_RADIO_B_DATA;
 	radio->parent = spi;
-
-	dev_info(&spi->dev, "registering radio B SPI\n");
 
 	ret = devm_spi_register_controller(&spi->dev, priv->radio_b_ctrl);
 	if (ret) {
