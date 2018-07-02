@@ -153,16 +153,12 @@ static int sx1301_radio_set_cs(struct spi_controller *ctrl, bool enable)
 
 static void sx1301_radio_spi_set_cs(struct spi_device *spi, bool enable)
 {
-	int ret;
-
 	dev_dbg(&spi->dev, "setting SPI CS to %s\n", enable ? "1" : "0");
 
 	if (enable)
 		return;
 
-	ret = sx1301_radio_set_cs(spi->controller, enable);
-	if (ret)
-		dev_warn(&spi->dev, "failed to write CS (%d)\n", ret);
+	sx1301_radio_set_cs(spi->controller, enable);
 }
 
 static int sx1301_radio_spi_transfer_one(struct spi_controller *ctrl,
