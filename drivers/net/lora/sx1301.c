@@ -19,8 +19,11 @@
 #include <linux/lora/dev.h>
 #include <linux/spi/spi.h>
 
+#define MCU_ARB_FW_BYTE 8192
 #define MCU_AGC_FW_BYTE 8192
 #include "sx1301_cal_fw.var"
+#include "sx1301_arb_fw.var"
+#include "sx1301_agc_fw.var"
 
 #define REG_PAGE_RESET			0
 #define REG_VERSION			1
@@ -53,6 +56,8 @@
 #define REG_17_CLK32M_EN		BIT(0)
 
 #define REG_0_105_FORCE_HOST_RADIO_CTRL		BIT(1)
+#define REG_0_105_FORCE_HOST_FE_CTRL		BIT(2)
+#define REG_0_105_FORCE_DEC_FILTER_GAIN		BIT(3)
 
 #define REG_0_MCU_RST_0			BIT(0)
 #define REG_0_MCU_RST_1			BIT(1)
@@ -264,6 +269,25 @@ static int sx1301_agc_ram_read(struct spi_device *spi, u8 addr, u8 *val)
 	return 0;
 }
 
+static int sx1301_arb_ram_read(struct spi_device *spi, u8 addr, u8 *val)
+{
+	int ret;
+
+	ret = sx1301_page_write(spi, 2, REG_2_DBG_ARB_MCU_RAM_ADDR, addr);
+	if (ret) {
+		dev_err(&spi->dev, "ARB RAM addr write failed\n");
+		return ret;
+	}
+
+	ret = sx1301_page_read(spi, 2, REG_2_DBG_ARB_MCU_RAM_DATA, val);
+	if (ret) {
+		dev_err(&spi->dev, "ARB RAM data read failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 static int sx1301_load_firmware(struct spi_device *spi, int mcu, const u8 *data, size_t len)
 {
 	u8 *buf;
@@ -463,6 +487,82 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 	dev_info(&spi->dev, "AGC status: %02x\n", (unsigned)val);
 	if ((val & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
 		dev_err(&spi->dev, "AGC calibration failed\n");
+		return -ENXIO;
+	}
+
+	return 0;
+}
+
+static int sx1301_load_all_firmware(struct spi_device *spi)
+{
+	u8 val;
+	int ret;
+
+	ret = sx1301_load_firmware(spi, 0, arb_firmware, MCU_ARB_FW_BYTE);
+	if (ret)
+		return ret;
+
+	ret = sx1301_load_firmware(spi, 1, agc_firmware, MCU_AGC_FW_BYTE);
+	if (ret)
+		return ret;
+
+	ret = sx1301_page_read(spi, 0, 105, &val);
+	if (ret) {
+		dev_err(&spi->dev, "0|105 read failed\n");
+		return ret;
+	}
+
+	val &= ~(REG_0_105_FORCE_HOST_RADIO_CTRL | REG_0_105_FORCE_HOST_FE_CTRL | REG_0_105_FORCE_DEC_FILTER_GAIN);
+
+	ret = sx1301_page_write(spi, 0, 105, val);
+	if (ret) {
+		dev_err(&spi->dev, "0|105 write failed\n");
+		return ret;
+	}
+
+	ret = sx1301_page_write(spi, 0, REG_0_RADIO_SELECT, 0);
+	if (ret) {
+		dev_err(&spi->dev, "radio select write failed\n");
+		return ret;
+	}
+
+	ret = sx1301_page_read(spi, 0, REG_0_MCU, &val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU read (0) failed\n");
+		return ret;
+	}
+
+	val &= ~(REG_0_MCU_RST_1 | REG_0_MCU_RST_0);
+
+	ret = sx1301_page_write(spi, 0, REG_0_MCU, val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU write (0) failed\n");
+		return ret;
+	}
+
+	ret = sx1301_agc_ram_read(spi, 0x20, &val);
+	if (ret) {
+		dev_err(&spi->dev, "AGC RAM data read failed\n");
+		return ret;
+	}
+
+	dev_info(&spi->dev, "AGC firmware version %u\n", (unsigned)val);
+
+	if (val != 4) {
+		dev_err(&spi->dev, "unexpected firmware version, expecting %u\n", 4);
+		return -ENXIO;
+	}
+
+	ret = sx1301_arb_ram_read(spi, 0x20, &val);
+	if (ret) {
+		dev_err(&spi->dev, "ARB RAM data read failed\n");
+		return ret;
+	}
+
+	dev_info(&spi->dev, "ARB firmware version %u\n", (unsigned)val);
+
+	if (val != 1) {
+		dev_err(&spi->dev, "unexpected firmware version, expecting %u\n", 1);
 		return -ENXIO;
 	}
 
@@ -723,10 +823,17 @@ static int sx1301_probe(struct spi_device *spi)
 	if (ret)
 		goto err_agc_calibrate;
 
+	/* TODO */
+
+	ret = sx1301_load_all_firmware(spi);
+	if (ret)
+		goto err_load_firmware;
+
 	dev_info(&spi->dev, "SX1301 module probed\n");
 
 	return 0;
 
+err_load_firmware:
 err_agc_calibrate:
 err_write_clk32m_1:
 err_read_clk32m_1:
