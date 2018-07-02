@@ -48,8 +48,13 @@ static int sx1257_probe(struct spi_device *spi)
 		dev_info(&spi->dev, "SX125x version: %02x\n", (unsigned)val);
 	}
 
-	ret = sx1257_write(spi, REG_CLK_SELECT,
-		/* REG_CLK_SELECT_CLK_OUT | */ REG_CLK_SELECT_TX_DAC_CLK_SELECT_CLK_IN);
+	val = REG_CLK_SELECT_TX_DAC_CLK_SELECT_CLK_IN;
+	if (strcmp(spi->controller->dev.of_node->name, "radio-b") == 0) { /* HACK */
+		val |= REG_CLK_SELECT_CLK_OUT;
+		dev_info(&spi->dev, "enabling clock output\n");
+	}
+
+	ret = sx1257_write(spi, REG_CLK_SELECT, val);
 	if (ret) {
 		dev_err(&spi->dev, "clk write failed\n");
 		return ret;
