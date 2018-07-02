@@ -19,11 +19,19 @@
 #include <linux/lora/dev.h>
 #include <linux/spi/spi.h>
 
+#define MCU_AGC_FW_BYTE 8192
+#include "sx1301_cal_fw.var"
+
 #define REG_PAGE_RESET			0
 #define REG_VERSION			1
+#define REG_MCU_PROM_ADDR		9
+#define REG_MCU_PROM_DATA		10
 #define REG_GPIO_SELECT_INPUT		27
 #define REG_GPIO_SELECT_OUTPUT		28
 #define REG_GPIO_MODE			29
+#define REG_MCU_AGC_STATUS		32
+#define REG_0_RADIO_SELECT		35
+#define REG_0_MCU			106
 #define REG_2_SPI_RADIO_A_DATA		33
 #define REG_2_SPI_RADIO_A_DATA_READBACK	34
 #define REG_2_SPI_RADIO_A_ADDR		35
@@ -32,6 +40,11 @@
 #define REG_2_SPI_RADIO_B_DATA_READBACK	39
 #define REG_2_SPI_RADIO_B_ADDR		40
 #define REG_2_SPI_RADIO_B_CS		42
+#define REG_2_DBG_ARB_MCU_RAM_DATA	64
+#define REG_2_DBG_AGC_MCU_RAM_DATA	65
+#define REG_2_DBG_ARB_MCU_RAM_ADDR	80
+#define REG_2_DBG_AGC_MCU_RAM_ADDR	81
+#define REG_EMERGENCY_FORCE		127
 
 #define REG_PAGE_RESET_SOFT_RESET	BIT(7)
 
@@ -39,9 +52,18 @@
 
 #define REG_17_CLK32M_EN		BIT(0)
 
+#define REG_0_105_FORCE_HOST_RADIO_CTRL		BIT(1)
+
+#define REG_0_MCU_RST_0			BIT(0)
+#define REG_0_MCU_RST_1			BIT(1)
+#define REG_0_MCU_SELECT_MUX_0		BIT(2)
+#define REG_0_MCU_SELECT_MUX_1		BIT(3)
+
 #define REG_2_43_RADIO_A_EN		BIT(0)
 #define REG_2_43_RADIO_B_EN		BIT(1)
 #define REG_2_43_RADIO_RST		BIT(2)
+
+#define REG_EMERGENCY_FORCE_HOST_CTRL	BIT(0)
 
 struct spi_sx1301 {
 	struct spi_device *parent;
@@ -218,6 +240,230 @@ static int sx1301_radio_spi_transfer_one(struct spi_controller *ctrl,
 			dev_err(&spi->dev, "SPI radio data read failed\n");
 			return ret;
 		}
+	}
+
+	return 0;
+}
+
+static int sx1301_agc_ram_read(struct spi_device *spi, u8 addr, u8 *val)
+{
+	int ret;
+
+	ret = sx1301_page_write(spi, 2, REG_2_DBG_AGC_MCU_RAM_ADDR, addr);
+	if (ret) {
+		dev_err(&spi->dev, "AGC RAM addr write failed\n");
+		return ret;
+	}
+
+	ret = sx1301_page_read(spi, 2, REG_2_DBG_AGC_MCU_RAM_DATA, val);
+	if (ret) {
+		dev_err(&spi->dev, "AGC RAM data read failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int sx1301_load_firmware(struct spi_device *spi, int mcu, const u8 *data, size_t len)
+{
+	u8 *buf;
+	u8 val, rst, select_mux;
+	int ret;
+
+	if (len > 8192)
+		return -EINVAL;
+
+	switch (mcu) {
+	case 0:
+		rst = REG_0_MCU_RST_0;
+		select_mux = REG_0_MCU_SELECT_MUX_0;
+		break;
+	case 1:
+		rst = REG_0_MCU_RST_1;
+		select_mux = REG_0_MCU_SELECT_MUX_1;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	ret = sx1301_page_read(spi, 0, REG_0_MCU, &val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU read failed\n");
+		return ret;
+	}
+
+	val |= rst;
+	val &= ~select_mux;
+
+	ret = sx1301_page_write(spi, 0, REG_0_MCU, val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU reset / select mux write failed\n");
+		return ret;
+	}
+
+	ret = sx1301_write(spi, REG_MCU_PROM_ADDR, 0);
+	if (ret) {
+		dev_err(&spi->dev, "MCU prom addr write failed\n");
+		return ret;
+	}
+
+	ret = sx1301_write_burst(spi, REG_MCU_PROM_DATA, data, len);
+	if (ret) {
+		dev_err(&spi->dev, "MCU prom data write failed\n");
+		return ret;
+	}
+
+	ret = sx1301_read(spi, REG_MCU_PROM_DATA, &val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU prom data dummy read failed\n");
+		return ret;
+	}
+
+	buf = kzalloc(MCU_AGC_FW_BYTE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	ret = sx1301_read_burst(spi, REG_MCU_PROM_DATA, buf, len);
+	if (ret) {
+		dev_err(&spi->dev, "MCU prom data read failed\n");
+		kfree(buf);
+		return ret;
+	}
+
+	if (memcmp(data, buf, len)) {
+		dev_err(&spi->dev, "MCU prom data read does not match data written\n");
+		kfree(buf);
+		return -ENXIO;
+	}
+
+	kfree(buf);
+
+	ret = sx1301_page_read(spi, 0, REG_0_MCU, &val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU read (1) failed\n");
+		return ret;
+	}
+
+	val |= select_mux;
+
+	ret = sx1301_page_write(spi, 0, REG_0_MCU, val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU reset / select mux write (1) failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int sx1301_agc_calibrate(struct spi_device *spi)
+{
+	u8 val;
+	int ret;
+
+	ret = sx1301_load_firmware(spi, 1, cal_firmware, MCU_AGC_FW_BYTE);
+	if (ret) {
+		dev_err(&spi->dev, "agc cal firmware load failed\n");
+		return ret;
+	}
+
+	ret = sx1301_page_read(spi, 0, 105, &val);
+	if (ret) {
+		dev_err(&spi->dev, "0|105 read failed\n");
+		return ret;
+	}
+
+	val &= ~REG_0_105_FORCE_HOST_RADIO_CTRL;
+
+	ret = sx1301_page_write(spi, 0, 105, val);
+	if (ret) {
+		dev_err(&spi->dev, "0|105 write failed\n");
+		return ret;
+	}
+
+	val = BIT(4); /* with DAC gain=3 */
+	if (false)
+		val |= BIT(5); /* SX1255 */
+
+	ret = sx1301_page_write(spi, 0, REG_0_RADIO_SELECT, val);
+	if (ret) {
+		dev_err(&spi->dev, "radio select write failed\n");
+		return ret;
+	}
+
+	ret = sx1301_page_read(spi, 0, REG_0_MCU, &val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU read (0) failed\n");
+		return ret;
+	}
+
+	val &= ~REG_0_MCU_RST_1;
+
+	ret = sx1301_page_write(spi, 0, REG_0_MCU, val);
+	if (ret) {
+		dev_err(&spi->dev, "MCU write (0) failed\n");
+		return ret;
+	}
+
+	ret = sx1301_agc_ram_read(spi, 0x20, &val);
+	if (ret) {
+		dev_err(&spi->dev, "AGC RAM data read failed\n");
+		return ret;
+	}
+
+	dev_info(&spi->dev, "AGC calibration firmware version %u\n", (unsigned)val);
+
+	if (val != 2) {
+		dev_err(&spi->dev, "unexpected firmware version, expecting %u\n", 2);
+		return -ENXIO;
+	}
+
+	ret = sx1301_page_switch(spi, 3);
+	if (ret) {
+		dev_err(&spi->dev, "page switch 3 failed\n");
+		return ret;
+	}
+
+	ret = sx1301_read(spi, REG_EMERGENCY_FORCE, &val);
+	if (ret) {
+		dev_err(&spi->dev, "emergency force read failed\n");
+		return ret;
+	}
+
+	val &= ~REG_EMERGENCY_FORCE_HOST_CTRL;
+
+	ret = sx1301_write(spi, REG_EMERGENCY_FORCE, val);
+	if (ret) {
+		dev_err(&spi->dev, "emergency force write failed\n");
+		return ret;
+	}
+
+	dev_err(&spi->dev, "starting calibration...\n");
+	msleep(2300);
+
+	ret = sx1301_read(spi, REG_EMERGENCY_FORCE, &val);
+	if (ret) {
+		dev_err(&spi->dev, "emergency force read (1) failed\n");
+		return ret;
+	}
+
+	val |= REG_EMERGENCY_FORCE_HOST_CTRL;
+
+	ret = sx1301_write(spi, REG_EMERGENCY_FORCE, val);
+	if (ret) {
+		dev_err(&spi->dev, "emergency force write (1) failed\n");
+		return ret;
+	}
+
+	ret = sx1301_read(spi, REG_MCU_AGC_STATUS, &val);
+	if (ret) {
+		dev_err(&spi->dev, "AGC status read failed\n");
+		return ret;
+	}
+
+	dev_info(&spi->dev, "AGC status: %02x\n", (unsigned)val);
+	if ((val & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
+		dev_err(&spi->dev, "AGC calibration failed\n");
+		return -ENXIO;
 	}
 
 	return 0;
@@ -443,10 +689,49 @@ static int sx1301_probe(struct spi_device *spi)
 
 	/* TODO LBT */
 
+	ret = sx1301_read(spi, 16, &val);
+	if (ret) {
+		dev_err(&spi->dev, "16 read (1) failed\n");
+		goto err_read_global_en_1;
+	}
+
+	val |= REG_16_GLOBAL_EN;
+
+	ret = sx1301_write(spi, 16, val);
+	if (ret) {
+		dev_err(&spi->dev, "16 write (1) failed\n");
+		goto err_write_global_en_1;
+	}
+
+	ret = sx1301_read(spi, 17, &val);
+	if (ret) {
+		dev_err(&spi->dev, "17 read (1) failed\n");
+		goto err_read_clk32m_1;
+	}
+
+	val |= REG_17_CLK32M_EN;
+
+	ret = sx1301_write(spi, 17, val);
+	if (ret) {
+		dev_err(&spi->dev, "17 write (1) failed\n");
+		goto err_write_clk32m_1;
+	}
+
+	/* calibration */
+
+	ret = sx1301_agc_calibrate(spi);
+	if (ret)
+		goto err_agc_calibrate;
+
 	dev_info(&spi->dev, "SX1301 module probed\n");
 
 	return 0;
 
+err_agc_calibrate:
+err_write_clk32m_1:
+err_read_clk32m_1:
+err_write_global_en_1:
+err_read_global_en_1:
 err_write_gpio_select_output:
 err_read_gpio_select_output:
 err_write_gpio_mode:
