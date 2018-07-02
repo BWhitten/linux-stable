@@ -38,7 +38,7 @@ static int sx1257_probe(struct spi_device *spi)
 	u8 val;
 	int ret;
 
-	if (true) {
+	if (false) {
 		ret = sx1257_read(spi, 0x07, &val);
 		if (ret) {
 			dev_err(&spi->dev, "version read failed\n");
