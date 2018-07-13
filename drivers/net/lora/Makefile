@@ -25,6 +25,9 @@ lora-sx1276-y := sx1276.o
 obj-$(CONFIG_LORA_SX1301) += lora-sx1301.o
 lora-sx1301-y := sx1301.o
 
+obj-$(CONFIG_LORA_TING01M) += lora-ting01m.o
+lora-ting01m-y := ting01m.o
+
 obj-$(CONFIG_LORA_USI) += lora-usi.o
 lora-usi-y := usi.o
 
