@@ -65,6 +65,29 @@ static int widora_simple_cmd(struct widora_device *widev, const char *cmd, unsig
 	return -EINVAL;
 }
 
+static int widora_do_reset(struct widora_device *widev, unsigned long timeout)
+{
+	char *resp;
+	int ret;
+
+	ret = widora_simple_cmd(widev, "AT+RST", timeout);
+	if (ret)
+		return ret;
+
+	timeout = wait_for_completion_timeout(&widev->line_recv_comp, timeout);
+	if (!timeout)
+		return -ETIMEDOUT;
+
+	resp = widev->rx_buf;
+
+	dev_info(&widev->serdev->dev, "reset: '%s'\n", resp);
+
+	widev->rx_len = 0;
+	reinit_completion(&widev->line_recv_comp);
+
+	return 0;
+}
+
 static int widora_get_version(struct widora_device *widev, char **version, unsigned long timeout)
 {
 	char *resp;
@@ -152,6 +175,13 @@ static int widora_probe(struct serdev_device *sdev)
 	serdev_device_set_baudrate(sdev, 115200);
 	serdev_device_set_flow_control(sdev, false);
 	serdev_device_set_client_ops(sdev, &widora_serdev_client_ops);
+
+	ret = widora_do_reset(widev, HZ);
+	if (ret) {
+		dev_err(&sdev->dev, "Failed to reset (%d)\n", ret);
+		serdev_device_close(sdev);
+		return ret;
+	}
 
 	ret = widora_get_version(widev, &sz, HZ);
 	if (ret) {
