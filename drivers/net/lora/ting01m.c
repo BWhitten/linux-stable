@@ -6,6 +6,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/lora.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -15,6 +16,8 @@
 
 struct widora_device {
 	struct serdev_device *serdev;
+
+	struct gpio_desc *rst;
 
 	char rx_buf[4096];
 	int rx_len;
@@ -63,6 +66,14 @@ static int widora_simple_cmd(struct widora_device *widev, const char *cmd, unsig
 	kfree(resp);
 
 	return -EINVAL;
+}
+
+static void widora_reset_mcu(struct widora_device *widev)
+{
+	gpiod_set_value_cansleep(widev->rst, 0);
+	msleep(200);
+	gpiod_set_value_cansleep(widev->rst, 1);
+	msleep(500);
 }
 
 static int widora_do_reset(struct widora_device *widev, unsigned long timeout)
@@ -161,6 +172,12 @@ static int widora_probe(struct serdev_device *sdev)
 	widev = devm_kzalloc(&sdev->dev, sizeof(struct widora_device), GFP_KERNEL);
 	if (!widev)
 		return -ENOMEM;
+
+	widev->rst = devm_gpiod_get_optional(&sdev->dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(widev->rst))
+		return PTR_ERR(widev->rst);
+
+	widora_reset_mcu(widev);
 
 	widev->serdev = sdev;
 	init_completion(&widev->line_recv_comp);
