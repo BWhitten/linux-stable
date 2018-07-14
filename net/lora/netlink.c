@@ -14,8 +14,8 @@ enum nllora_attrs {
 
 	NLLORA_ATTR_FOO,
 
-	__NLLORA_AFTER_LAST,
-	NLLORA_ATTR_MAX = __NLLORA_AFTER_LAST - 1,
+	__NLLORA_ATTR_AFTER_LAST,
+	NLLORA_ATTR_MAX = __NLLORA_ATTR_AFTER_LAST - 1,
 };
 
 enum nllora_commands {
@@ -30,7 +30,7 @@ enum nllora_commands {
 // end nllora.h
 
 enum nllora_multicast_groups {
-	NLLORA_MCGRP_CONFIG,
+	NLLORA_MCGRP_CONFIG = 0,
 };
 
 static const struct genl_multicast_group nllora_mcgrps[] = {
