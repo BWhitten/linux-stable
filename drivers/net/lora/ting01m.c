@@ -121,6 +121,27 @@ static int widora_get_version(struct widora_device *widev, char **version, unsig
 	return -EINVAL;
 }
 
+static int widora_set_gpio(struct widora_device *widev, char bank, char pin, bool enabled, unsigned long timeout)
+{
+	char cmd[] = "AT+Pxx=x";
+
+	cmd[4] = bank;
+	cmd[5] = pin;
+	cmd[7] = enabled ? '1' : '0';
+
+	return widora_simple_cmd(widev, cmd, timeout);
+}
+
+static int widora_set_gpio_pb0(struct widora_device *widev, bool enabled, unsigned long timeout)
+{
+	return widora_set_gpio(widev, 'B', '0', enabled, timeout);
+}
+
+static int widora_set_gpio_pd0(struct widora_device *widev, bool enabled, unsigned long timeout)
+{
+	return widora_set_gpio(widev, 'D', '0', enabled, timeout);
+}
+
 static int widora_receive_buf(struct serdev_device *sdev, const u8 *data, size_t count)
 {
 	struct widora_device *widev = serdev_device_get_drvdata(sdev);
@@ -209,6 +230,20 @@ static int widora_probe(struct serdev_device *sdev)
 
 	dev_info(&sdev->dev, "firmware version: %s\n", sz);
 	kfree(sz);
+
+	ret = widora_set_gpio_pb0(widev, true, HZ);
+	if (ret) {
+		dev_err(&sdev->dev, "Failed to set GPIO PB0 (%d)\n", ret);
+		serdev_device_close(sdev);
+		return ret;
+	}
+
+	ret = widora_set_gpio_pd0(widev, true, HZ);
+	if (ret) {
+		dev_err(&sdev->dev, "Failed to set GPIO PD0 (%d)\n", ret);
+		serdev_device_close(sdev);
+		return ret;
+	}
 
 	dev_info(&sdev->dev, "Done.\n");
 
