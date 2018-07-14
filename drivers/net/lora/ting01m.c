@@ -259,6 +259,7 @@ static void widora_remove(struct serdev_device *sdev)
 
 static const struct of_device_id widora_of_match[] = {
 	{ .compatible = "himalaya,himo-01m" },
+	{ .compatible = "widora,ting-01m" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, widora_of_match);
