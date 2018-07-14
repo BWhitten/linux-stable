@@ -87,3 +87,7 @@ static void __exit nllora_exit(void)
 
 subsys_initcall(nllora_init);
 module_exit(nllora_exit);
+
+MODULE_DESCRIPTION("LoRa netlink driver");
+MODULE_AUTHOR("Andreas Färber <afaerber@suse.de>");
+MODULE_LICENSE("GPL");
