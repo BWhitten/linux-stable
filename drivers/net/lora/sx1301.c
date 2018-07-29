@@ -10,6 +10,7 @@
 
 #include <linux/bitops.h>
 #include <linux/delay.h>
+#include <linux/firmware.h>
 #include <linux/lora.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -18,12 +19,6 @@
 #include <linux/of_gpio.h>
 #include <linux/lora/dev.h>
 #include <linux/spi/spi.h>
-
-#define MCU_ARB_FW_BYTE 8192
-#define MCU_AGC_FW_BYTE 8192
-#include "sx1301_cal_fw.var"
-#include "sx1301_arb_fw.var"
-#include "sx1301_agc_fw.var"
 
 #define REG_PAGE_RESET			0
 #define REG_VERSION			1
@@ -343,7 +338,7 @@ static int sx1301_load_firmware(struct spi_device *spi, int mcu, const u8 *data,
 		return ret;
 	}
 
-	buf = kzalloc(MCU_AGC_FW_BYTE, GFP_KERNEL);
+	buf = kzalloc(len, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -381,10 +376,23 @@ static int sx1301_load_firmware(struct spi_device *spi, int mcu, const u8 *data,
 
 static int sx1301_agc_calibrate(struct spi_device *spi)
 {
+	const struct firmware *fw;
 	u8 val;
 	int ret;
 
-	ret = sx1301_load_firmware(spi, 1, cal_firmware, MCU_AGC_FW_BYTE);
+	ret = request_firmware(&fw, "sx1301_agc_calibration.bin", &spi->dev);
+	if (ret) {
+		dev_err(&spi->dev, "agc cal firmware file load failed\n");
+		return ret;
+	}
+
+	if (fw->size != 8192) {
+		dev_err(&spi->dev, "unexpected agc cal firmware size\n");
+		return -EINVAL;
+	}
+
+	ret = sx1301_load_firmware(spi, 1, fw->data, fw->size);
+	release_firmware(fw);
 	if (ret) {
 		dev_err(&spi->dev, "agc cal firmware load failed\n");
 		return ret;
@@ -495,14 +503,41 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 
 static int sx1301_load_all_firmware(struct spi_device *spi)
 {
+	const struct firmware *fw;
 	u8 val;
 	int ret;
 
-	ret = sx1301_load_firmware(spi, 0, arb_firmware, MCU_ARB_FW_BYTE);
+	ret = request_firmware(&fw, "sx1301_arb.bin", &spi->dev);
+	if (ret) {
+		dev_err(&spi->dev, "arb firmware file load failed\n");
+		return ret;
+	}
+
+	if (fw->size != 8192) {
+		dev_err(&spi->dev, "unexpected arb firmware size\n");
+		release_firmware(fw);
+		return -EINVAL;
+	}
+
+	ret = sx1301_load_firmware(spi, 0, fw->data, fw->size);
+	release_firmware(fw);
 	if (ret)
 		return ret;
 
-	ret = sx1301_load_firmware(spi, 1, agc_firmware, MCU_AGC_FW_BYTE);
+	ret = request_firmware(&fw, "sx1301_agc.bin", &spi->dev);
+	if (ret) {
+		dev_err(&spi->dev, "agc firmware file load failed\n");
+		return ret;
+	}
+
+	if (fw->size != 8192) {
+		dev_err(&spi->dev, "unexpected agc firmware size\n");
+		release_firmware(fw);
+		return -EINVAL;
+	}
+
+	ret = sx1301_load_firmware(spi, 1, fw->data, fw->size);
+	release_firmware(fw);
 	if (ret)
 		return ret;
 
