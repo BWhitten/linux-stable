@@ -318,9 +318,8 @@ static int sx1301_read_burst(struct sx1301_priv *priv, u8 reg, u8 *val, size_t l
 	return spi_write_then_read(priv->spi, &addr, 1, val, len);
 }
 
-static int sx1301_read(struct spi_device *spi, u8 reg, u8 *val)
+static int sx1301_read(struct sx1301_priv *priv, u8 reg, u8 *val)
 {
-	struct sx1301_priv *priv = spi_get_drvdata(spi);
 	return sx1301_read_burst(priv, reg, val, 1);
 }
 
@@ -335,9 +334,8 @@ static int sx1301_write_burst(struct sx1301_priv *priv, u8 reg, const u8 *val, s
 	return spi_sync_transfer(priv->spi, xfr, 2);
 }
 
-static int sx1301_write(struct spi_device *spi, u8 reg, u8 val)
+static int sx1301_write(struct sx1301_priv *priv, u8 reg, u8 val)
 {
-	struct sx1301_priv *priv = spi_get_drvdata(spi);
 	return sx1301_write_burst(priv, reg, &val, 1);
 }
 
@@ -350,7 +348,7 @@ static int sx1301_page_switch(struct spi_device *spi, u8 page)
 		return 0;
 
 	dev_dbg(&spi->dev, "switching to page %u\n", (unsigned)page);
-	ret = sx1301_write(spi, REG_PAGE_RESET, page & 0x3);
+	ret = sx1301_write(priv, REG_PAGE_RESET, page & 0x3);
 	if (ret) {
 		dev_err(&spi->dev, "switching to page %u failed\n", (unsigned)page);
 		return ret;
@@ -364,23 +362,25 @@ static int sx1301_page_switch(struct spi_device *spi, u8 page)
 static int sx1301_page_read(struct spi_device *spi, u8 page, u8 reg, u8 *val)
 {
 	int ret;
+	struct sx1301_priv *priv = spi_get_drvdata(spi);
 
 	ret = sx1301_page_switch(spi, page);
 	if (ret)
 		return ret;
 
-	return sx1301_read(spi, reg, val);
+	return sx1301_read(priv, reg, val);
 }
 
 static int sx1301_page_write(struct spi_device *spi, u8 page, u8 reg, u8 val)
 {
 	int ret;
+	struct sx1301_priv *priv = spi_get_drvdata(spi);
 
 	ret = sx1301_page_switch(spi, page);
 	if (ret)
 		return ret;
 
-	return sx1301_write(spi, reg, val);
+	return sx1301_write(priv, reg, val);
 }
 
 #define REG_RADIO_X_DATA		0
@@ -666,7 +666,7 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 		return ret;
 	}
 
-	ret = sx1301_read(spi, REG_EMERGENCY_FORCE, &val);
+	ret = sx1301_read(priv, REG_EMERGENCY_FORCE, &val);
 	if (ret) {
 		dev_err(&spi->dev, "emergency force read failed\n");
 		return ret;
@@ -674,7 +674,7 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 
 	val &= ~REG_EMERGENCY_FORCE_HOST_CTRL;
 
-	ret = sx1301_write(spi, REG_EMERGENCY_FORCE, val);
+	ret = sx1301_write(priv, REG_EMERGENCY_FORCE, val);
 	if (ret) {
 		dev_err(&spi->dev, "emergency force write failed\n");
 		return ret;
@@ -683,7 +683,7 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 	dev_err(&spi->dev, "starting calibration...\n");
 	msleep(2300);
 
-	ret = sx1301_read(spi, REG_EMERGENCY_FORCE, &val);
+	ret = sx1301_read(priv, REG_EMERGENCY_FORCE, &val);
 	if (ret) {
 		dev_err(&spi->dev, "emergency force read (1) failed\n");
 		return ret;
@@ -691,13 +691,13 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 
 	val |= REG_EMERGENCY_FORCE_HOST_CTRL;
 
-	ret = sx1301_write(spi, REG_EMERGENCY_FORCE, val);
+	ret = sx1301_write(priv, REG_EMERGENCY_FORCE, val);
 	if (ret) {
 		dev_err(&spi->dev, "emergency force write (1) failed\n");
 		return ret;
 	}
 
-	ret = sx1301_read(spi, REG_MCU_AGC_STATUS, &val);
+	ret = sx1301_read(priv, REG_MCU_AGC_STATUS, &val);
 	if (ret) {
 		dev_err(&spi->dev, "AGC status read failed\n");
 		return ret;
