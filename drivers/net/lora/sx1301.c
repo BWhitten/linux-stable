@@ -283,6 +283,7 @@ struct spi_sx1301 {
 };
 
 struct sx1301_priv {
+	struct device *dev;
 	struct lora_priv lora;
 	struct gpio_desc *rst_gpio;
 	u8 cur_page;
@@ -472,40 +473,44 @@ static int sx1301_radio_spi_transfer_one(struct spi_controller *ctrl,
 	return 0;
 }
 
-static int sx1301_agc_ram_read(struct spi_device *spi, u8 addr, u8 *val)
+static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr, u8 *val)
 {
 	int ret;
+	unsigned int read;
 
-	ret = sx1301_page_write(spi, 2, REG_2_DBG_AGC_MCU_RAM_ADDR, addr);
+	ret = regmap_write(priv->regmap, SX1301_DBG_AGC_MCU_RAM_ADDR, addr);
 	if (ret) {
-		dev_err(&spi->dev, "AGC RAM addr write failed\n");
+		dev_err(priv->dev, "AGC RAM addr write failed\n");
 		return ret;
 	}
 
-	ret = sx1301_page_read(spi, 2, REG_2_DBG_AGC_MCU_RAM_DATA, val);
+	ret = regmap_read(priv->regmap, SX1301_DBG_AGC_MCU_RAM_DATA, &read);
 	if (ret) {
-		dev_err(&spi->dev, "AGC RAM data read failed\n");
+		dev_err(priv->dev, "AGC RAM data read failed\n");
 		return ret;
 	}
+	*val = read;
 
 	return 0;
 }
 
-static int sx1301_arb_ram_read(struct spi_device *spi, u8 addr, u8 *val)
+static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr, u8 *val)
 {
 	int ret;
+	unsigned int read;
 
-	ret = sx1301_page_write(spi, 2, REG_2_DBG_ARB_MCU_RAM_ADDR, addr);
+	ret = regmap_write(priv->regmap, SX1301_DBG_ARB_MCU_RAM_ADDR, addr);
 	if (ret) {
-		dev_err(&spi->dev, "ARB RAM addr write failed\n");
+		dev_err(priv->dev, "ARB RAM addr write failed\n");
 		return ret;
 	}
 
-	ret = sx1301_page_read(spi, 2, REG_2_DBG_ARB_MCU_RAM_DATA, val);
+	ret = regmap_read(priv->regmap, SX1301_DBG_ARB_MCU_RAM_DATA, &read);
 	if (ret) {
-		dev_err(&spi->dev, "ARB RAM data read failed\n");
+		dev_err(priv->dev, "ARB RAM data read failed\n");
 		return ret;
 	}
+	*val = read;
 
 	return 0;
 }
@@ -604,6 +609,7 @@ static int sx1301_load_firmware(struct spi_device *spi, int mcu, const u8 *data,
 static int sx1301_agc_calibrate(struct spi_device *spi)
 {
 	const struct firmware *fw;
+	struct sx1301_priv *priv = spi_get_drvdata(spi);
 	u8 val;
 	int ret;
 
@@ -663,7 +669,7 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 		return ret;
 	}
 
-	ret = sx1301_agc_ram_read(spi, 0x20, &val);
+	ret = sx1301_agc_ram_read(priv, 0x20, &val);
 	if (ret) {
 		dev_err(&spi->dev, "AGC RAM data read failed\n");
 		return ret;
@@ -730,6 +736,7 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 
 static int sx1301_load_all_firmware(struct spi_device *spi)
 {
+	struct sx1301_priv *priv = spi_get_drvdata(spi);
 	const struct firmware *fw;
 	u8 val;
 	int ret;
@@ -802,7 +809,7 @@ static int sx1301_load_all_firmware(struct spi_device *spi)
 		return ret;
 	}
 
-	ret = sx1301_agc_ram_read(spi, 0x20, &val);
+	ret = sx1301_agc_ram_read(priv, 0x20, &val);
 	if (ret) {
 		dev_err(&spi->dev, "AGC RAM data read failed\n");
 		return ret;
@@ -815,7 +822,7 @@ static int sx1301_load_all_firmware(struct spi_device *spi)
 		return -ENXIO;
 	}
 
-	ret = sx1301_arb_ram_read(spi, 0x20, &val);
+	ret = sx1301_arb_ram_read(priv, 0x20, &val);
 	if (ret) {
 		dev_err(&spi->dev, "ARB RAM data read failed\n");
 		return ret;
@@ -878,6 +885,7 @@ static int sx1301_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, netdev);
 	SET_NETDEV_DEV(netdev, &spi->dev);
+	priv->dev = &spi->dev;
 
 	priv->regmap = devm_regmap_init_spi(spi, &sx1301_regmap_config);
 	if (IS_ERR(priv->regmap)) {
