@@ -379,11 +379,6 @@ static int sx1301_page_write(struct spi_device *spi, u8 page, u8 reg, u8 val)
 	return sx1301_write(spi, reg, val);
 }
 
-static int sx1301_soft_reset(struct spi_device *spi)
-{
-	return sx1301_write(spi, REG_PAGE_RESET, REG_PAGE_RESET_SOFT_RESET);
-}
-
 #define REG_RADIO_X_DATA		0
 #define REG_RADIO_X_DATA_READBACK	1
 #define REG_RADIO_X_ADDR		2
@@ -854,7 +849,6 @@ static int sx1301_probe(struct spi_device *spi)
 	int ret;
 	int i;
 	unsigned int ver;
-	u8 val;
 
 	rst = devm_gpiod_get_optional(&spi->dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(rst))
@@ -911,96 +905,46 @@ static int sx1301_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	if (ver != 103) {
+	if (ver != SX1301_CHIP_VERSION) {
 		dev_err(&spi->dev, "unexpected version: %u\n", ver);
 		return -ENXIO;
 	}
 
-	ret = sx1301_write(spi, REG_PAGE_RESET, 0);
+	ret = regmap_write(priv->regmap, SX1301_PAGE, 0);
 	if (ret) {
 		dev_err(&spi->dev, "page/reset write failed\n");
 		return ret;
 	}
 
-	ret = sx1301_soft_reset(spi);
+	ret = sx1301_field_write(priv, F_SOFT_RESET, 1);
 	if (ret) {
 		dev_err(&spi->dev, "soft reset failed\n");
 		return ret;
 	}
 
-	ret = sx1301_read(spi, 16, &val);
-	if (ret) {
-		dev_err(&spi->dev, "16 read failed\n");
+	/* gate clocks */
+	ret = sx1301_field_write(priv, F_GLOBAL_EN, 0);
+	if (ret)
 		return ret;
-	}
-
-	val &= ~REG_16_GLOBAL_EN;
-
-	ret = sx1301_write(spi, 16, val);
-	if (ret) {
-		dev_err(&spi->dev, "16 write failed\n");
+	ret = sx1301_field_write(priv, F_CLK32M_EN, 0);
+	if (ret)
 		return ret;
-	}
 
-	ret = sx1301_read(spi, 17, &val);
-	if (ret) {
-		dev_err(&spi->dev, "17 read failed\n");
+	/* switch on and reset the radios (also starts the 32 MHz XTAL) */
+	ret = sx1301_field_write(priv, F_RADIO_A_EN, 1);
+	if (ret)
 		return ret;
-	}
-
-	val &= ~REG_17_CLK32M_EN;
-
-	ret = sx1301_write(spi, 17, val);
-	if (ret) {
-		dev_err(&spi->dev, "17 write failed\n");
+	ret = sx1301_field_write(priv, F_RADIO_B_EN, 1);
+	if (ret)
 		return ret;
-	}
-
-	ret = sx1301_page_read(spi, 2, 43, &val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 read failed\n");
+	mdelay(500);
+	ret = sx1301_field_write(priv, F_RADIO_RST, 1);
+	if (ret)
 		return ret;
-	}
-
-	val |= REG_2_43_RADIO_B_EN | REG_2_43_RADIO_A_EN;
-
-	ret = sx1301_page_write(spi, 2, 43, val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 write failed\n");
+	mdelay(5);
+	ret = sx1301_field_write(priv, F_RADIO_RST, 0);
+	if (ret)
 		return ret;
-	}
-
-	msleep(500);
-
-	ret = sx1301_page_read(spi, 2, 43, &val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 read failed\n");
-		return ret;
-	}
-
-	val |= REG_2_43_RADIO_RST;
-
-	ret = sx1301_page_write(spi, 2, 43, val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 write failed\n");
-		return ret;
-	}
-
-	msleep(5);
-
-	ret = sx1301_page_read(spi, 2, 43, &val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 read failed\n");
-		return ret;
-	}
-
-	val &= ~REG_2_43_RADIO_RST;
-
-	ret = sx1301_page_write(spi, 2, 43, val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 write failed\n");
-		return ret;
-	}
 
 	/* radio A */
 
@@ -1047,65 +991,22 @@ static int sx1301_probe(struct spi_device *spi)
 	}
 
 	/* GPIO */
-
-	ret = sx1301_read(spi, REG_GPIO_MODE, &val);
-	if (ret) {
-		dev_err(&spi->dev, "GPIO mode read failed\n");
+	ret = regmap_write(priv->regmap, SX1301_GPMODE, 0x1F);
+	if (ret)
 		return ret;
-	}
-
-	val |= GENMASK(4, 0);
-
-	ret = sx1301_write(spi, REG_GPIO_MODE, val);
-	if (ret) {
-		dev_err(&spi->dev, "GPIO mode write failed\n");
+	ret = regmap_write(priv->regmap, SX1301_GPSO, 0x2);
+	if (ret)
 		return ret;
-	}
-
-	ret = sx1301_read(spi, REG_GPIO_SELECT_OUTPUT, &val);
-	if (ret) {
-		dev_err(&spi->dev, "GPIO select output read failed\n");
-		return ret;
-	}
-
-	val &= ~GENMASK(3, 0);
-	val |= 2;
-
-	ret = sx1301_write(spi, REG_GPIO_SELECT_OUTPUT, val);
-	if (ret) {
-		dev_err(&spi->dev, "GPIO select output write failed\n");
-		return ret;
-	}
 
 	/* TODO LBT */
 
-	ret = sx1301_read(spi, 16, &val);
-	if (ret) {
-		dev_err(&spi->dev, "16 read (1) failed\n");
+	/* start clocks */
+	ret = sx1301_field_write(priv, F_GLOBAL_EN, 1);
+	if (ret)
 		return ret;
-	}
-
-	val |= REG_16_GLOBAL_EN;
-
-	ret = sx1301_write(spi, 16, val);
-	if (ret) {
-		dev_err(&spi->dev, "16 write (1) failed\n");
+	ret = sx1301_field_write(priv, F_CLK32M_EN, 1);
+	if (ret)
 		return ret;
-	}
-
-	ret = sx1301_read(spi, 17, &val);
-	if (ret) {
-		dev_err(&spi->dev, "17 read (1) failed\n");
-		return ret;
-	}
-
-	val |= REG_17_CLK32M_EN;
-
-	ret = sx1301_write(spi, 17, val);
-	if (ret) {
-		dev_err(&spi->dev, "17 write (1) failed\n");
-		return ret;
-	}
 
 	/* calibration */
 
