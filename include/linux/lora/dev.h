@@ -32,6 +32,7 @@ static inline int lora_strtoeui(const char *str, lora_eui *val)
 
 struct net_device *alloc_loradev(int sizeof_priv);
 void free_loradev(struct net_device *dev);
+int devm_lora_register_netdev(struct device *dev, struct net_device *net);
 int register_loradev(struct net_device *dev);
 void unregister_loradev(struct net_device *dev);
 int open_loradev(struct net_device *dev);

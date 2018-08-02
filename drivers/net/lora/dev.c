@@ -84,6 +84,26 @@ void free_loradev(struct net_device *dev)
 }
 EXPORT_SYMBOL_GPL(free_loradev);
 
+static void devm_lora_unregister(struct device *dev, void *res)
+{
+	free_loradev(*(struct net_device **)res);
+}
+
+int devm_lora_register_netdev(struct device *dev, struct net_device *net)
+{
+	struct net_device **ptr;
+
+	ptr = devres_alloc(devm_lora_unregister, sizeof(*ptr), GFP_KERNEL);
+	if (!ptr)
+		return -ENOMEM;
+
+	*ptr = net;
+	devres_add(dev, ptr);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(devm_lora_register_netdev);
+
 static struct rtnl_link_ops lora_link_ops __read_mostly = {
 	.kind = "lora",
 	.setup = lora_setup,
