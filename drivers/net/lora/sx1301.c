@@ -312,18 +312,19 @@ static int sx1301_field_write(struct sx1301_priv *priv,
 	return regmap_field_write(priv->regmap_fields[field_id], val);
 }
 
-static int sx1301_read_burst(struct spi_device *spi, u8 reg, u8 *val, size_t len)
+static int sx1301_read_burst(struct sx1301_priv *priv, u8 reg, u8 *val, size_t len)
 {
 	u8 addr = reg & 0x7f;
-	return spi_write_then_read(spi, &addr, 1, val, len);
+	return spi_write_then_read(priv->spi, &addr, 1, val, len);
 }
 
 static int sx1301_read(struct spi_device *spi, u8 reg, u8 *val)
 {
-	return sx1301_read_burst(spi, reg, val, 1);
+	struct sx1301_priv *priv = spi_get_drvdata(spi);
+	return sx1301_read_burst(priv, reg, val, 1);
 }
 
-static int sx1301_write_burst(struct spi_device *spi, u8 reg, const u8 *val, size_t len)
+static int sx1301_write_burst(struct sx1301_priv *priv, u8 reg, const u8 *val, size_t len)
 {
 	u8 addr = reg | BIT(7);
 	struct spi_transfer xfr[2] = {
@@ -331,12 +332,13 @@ static int sx1301_write_burst(struct spi_device *spi, u8 reg, const u8 *val, siz
 		{ .tx_buf = val, .len = len },
 	};
 
-	return spi_sync_transfer(spi, xfr, 2);
+	return spi_sync_transfer(priv->spi, xfr, 2);
 }
 
 static int sx1301_write(struct spi_device *spi, u8 reg, u8 val)
 {
-	return sx1301_write_burst(spi, reg, &val, 1);
+	struct sx1301_priv *priv = spi_get_drvdata(spi);
+	return sx1301_write_burst(priv, reg, &val, 1);
 }
 
 static int sx1301_page_switch(struct spi_device *spi, u8 page)
@@ -551,7 +553,7 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct 
 	if (ret)
 		return ret;
 
-	ret = sx1301_write_burst(priv->spi, SX1301_MPA, fw->data, fw->size);
+	ret = sx1301_write_burst(priv, SX1301_MPA, fw->data, fw->size);
 	if (ret) {
 		dev_err(priv->dev, "MCU prom data write failed\n");
 		return ret;
@@ -567,7 +569,7 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct 
 	if (!buf)
 		return -ENOMEM;
 
-	ret = sx1301_read_burst(priv->spi, SX1301_MPD, buf, fw->size);
+	ret = sx1301_read_burst(priv, SX1301_MPD, buf, fw->size);
 	if (ret) {
 		dev_err(priv->dev, "MCU prom data read failed\n");
 		return ret;
