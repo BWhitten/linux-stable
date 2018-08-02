@@ -284,6 +284,7 @@ struct spi_sx1301 {
 
 struct sx1301_priv {
 	struct device *dev;
+	struct spi_device *spi;
 	struct lora_priv lora;
 	struct gpio_desc *rst_gpio;
 	u8 cur_page;
@@ -515,93 +516,73 @@ static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr, u8 *val)
 	return 0;
 }
 
-static int sx1301_load_firmware(struct spi_device *spi, int mcu, const u8 *data, size_t len)
+static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct firmware *fw)
 {
 	u8 *buf;
-	u8 val, rst, select_mux;
 	int ret;
+	unsigned int read;
+	enum sx1301_fields rst, select_mux;
 
-	if (len > 8192)
+	if (fw->size > SX1301_MCU_FW_BYTE)
 		return -EINVAL;
 
 	switch (mcu) {
 	case 0:
-		rst = REG_0_MCU_RST_0;
-		select_mux = REG_0_MCU_SELECT_MUX_0;
+		rst = F_MCU_RST_0;
+		select_mux = F_MCU_SELECT_MUX_0;
 		break;
 	case 1:
-		rst = REG_0_MCU_RST_1;
-		select_mux = REG_0_MCU_SELECT_MUX_1;
+		rst = F_MCU_RST_1;
+		select_mux = F_MCU_SELECT_MUX_1;
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	ret = sx1301_page_read(spi, 0, REG_0_MCU, &val);
+	ret = sx1301_field_write(priv, rst, 1);
+	if (ret)
+		return ret;
+	ret = sx1301_field_write(priv, select_mux, 0);
+	if (ret)
+		return ret;
+
+	/* Load firmware into the data register */
+	ret = regmap_write(priv->regmap, SX1301_MPA, 0);
+	if (ret)
+		return ret;
+
+	ret = sx1301_write_burst(priv->spi, SX1301_MPA, fw->data, fw->size);
 	if (ret) {
-		dev_err(&spi->dev, "MCU read failed\n");
+		dev_err(priv->dev, "MCU prom data write failed\n");
 		return ret;
 	}
 
-	val |= rst;
-	val &= ~select_mux;
-
-	ret = sx1301_page_write(spi, 0, REG_0_MCU, val);
+	ret = regmap_read(priv->regmap, SX1301_MPD, &read);
 	if (ret) {
-		dev_err(&spi->dev, "MCU reset / select mux write failed\n");
+		dev_err(priv->dev, "MCU prom data dummy read failed\n");
 		return ret;
 	}
 
-	ret = sx1301_write(spi, REG_MCU_PROM_ADDR, 0);
-	if (ret) {
-		dev_err(&spi->dev, "MCU prom addr write failed\n");
-		return ret;
-	}
-
-	ret = sx1301_write_burst(spi, REG_MCU_PROM_DATA, data, len);
-	if (ret) {
-		dev_err(&spi->dev, "MCU prom data write failed\n");
-		return ret;
-	}
-
-	ret = sx1301_read(spi, REG_MCU_PROM_DATA, &val);
-	if (ret) {
-		dev_err(&spi->dev, "MCU prom data dummy read failed\n");
-		return ret;
-	}
-
-	buf = kzalloc(len, GFP_KERNEL);
+	buf = devm_kzalloc(priv->dev, fw->size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	ret = sx1301_read_burst(spi, REG_MCU_PROM_DATA, buf, len);
+	ret = sx1301_read_burst(priv->spi, SX1301_MPD, buf, fw->size);
 	if (ret) {
-		dev_err(&spi->dev, "MCU prom data read failed\n");
-		kfree(buf);
+		dev_err(priv->dev, "MCU prom data read failed\n");
 		return ret;
 	}
 
-	if (memcmp(data, buf, len)) {
-		dev_err(&spi->dev, "MCU prom data read does not match data written\n");
-		kfree(buf);
+	if (memcmp(fw->data, buf, fw->size)) {
+		dev_err(priv->dev, "MCU prom data read does not match data written\n");
 		return -ENXIO;
 	}
 
-	kfree(buf);
+	devm_kfree(priv->dev, buf);
 
-	ret = sx1301_page_read(spi, 0, REG_0_MCU, &val);
-	if (ret) {
-		dev_err(&spi->dev, "MCU read (1) failed\n");
+	ret = sx1301_field_write(priv, select_mux, 1);
+	if (ret)
 		return ret;
-	}
-
-	val |= select_mux;
-
-	ret = sx1301_page_write(spi, 0, REG_0_MCU, val);
-	if (ret) {
-		dev_err(&spi->dev, "MCU reset / select mux write (1) failed\n");
-		return ret;
-	}
 
 	return 0;
 }
@@ -613,18 +594,13 @@ static int sx1301_agc_calibrate(struct spi_device *spi)
 	u8 val;
 	int ret;
 
-	ret = request_firmware(&fw, "sx1301_agc_calibration.bin", &spi->dev);
+	ret = request_firmware(&fw, "sx1301_agc_calibration.bin", priv->dev);
 	if (ret) {
 		dev_err(&spi->dev, "agc cal firmware file load failed\n");
 		return ret;
 	}
 
-	if (fw->size != 8192) {
-		dev_err(&spi->dev, "unexpected agc cal firmware size\n");
-		return -EINVAL;
-	}
-
-	ret = sx1301_load_firmware(spi, 1, fw->data, fw->size);
+	ret = sx1301_load_firmware(priv, 1, fw);
 	release_firmware(fw);
 	if (ret) {
 		dev_err(&spi->dev, "agc cal firmware load failed\n");
@@ -741,36 +717,24 @@ static int sx1301_load_all_firmware(struct spi_device *spi)
 	u8 val;
 	int ret;
 
-	ret = request_firmware(&fw, "sx1301_arb.bin", &spi->dev);
+	ret = request_firmware(&fw, "sx1301_arb.bin", priv->dev);
 	if (ret) {
-		dev_err(&spi->dev, "arb firmware file load failed\n");
+		dev_err(priv->dev, "arb firmware file load failed\n");
 		return ret;
 	}
 
-	if (fw->size != 8192) {
-		dev_err(&spi->dev, "unexpected arb firmware size\n");
-		release_firmware(fw);
-		return -EINVAL;
-	}
-
-	ret = sx1301_load_firmware(spi, 0, fw->data, fw->size);
+	ret = sx1301_load_firmware(priv, 0, fw);
 	release_firmware(fw);
 	if (ret)
 		return ret;
 
-	ret = request_firmware(&fw, "sx1301_agc.bin", &spi->dev);
+	ret = request_firmware(&fw, "sx1301_agc.bin", priv->dev);
 	if (ret) {
-		dev_err(&spi->dev, "agc firmware file load failed\n");
+		dev_err(priv->dev, "agc firmware file load failed\n");
 		return ret;
 	}
 
-	if (fw->size != 8192) {
-		dev_err(&spi->dev, "unexpected agc firmware size\n");
-		release_firmware(fw);
-		return -EINVAL;
-	}
-
-	ret = sx1301_load_firmware(spi, 1, fw->data, fw->size);
+	ret = sx1301_load_firmware(priv, 1, fw);
 	release_firmware(fw);
 	if (ret)
 		return ret;
@@ -886,6 +850,7 @@ static int sx1301_probe(struct spi_device *spi)
 	spi_set_drvdata(spi, netdev);
 	SET_NETDEV_DEV(netdev, &spi->dev);
 	priv->dev = &spi->dev;
+	priv->spi = spi;
 
 	priv->regmap = devm_regmap_init_spi(spi, &sx1301_regmap_config);
 	if (IS_ERR(priv->regmap)) {
