@@ -589,123 +589,74 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct 
 	return 0;
 }
 
-static int sx1301_agc_calibrate(struct spi_device *spi)
+static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 {
 	const struct firmware *fw;
-	struct sx1301_priv *priv = spi_get_drvdata(spi);
 	u8 val;
 	int ret;
+	unsigned int cal;
 
 	ret = request_firmware(&fw, "sx1301_agc_calibration.bin", priv->dev);
 	if (ret) {
-		dev_err(&spi->dev, "agc cal firmware file load failed\n");
+		dev_err(priv->dev, "AGC CAL firmware file load failed\n");
 		return ret;
 	}
 
 	ret = sx1301_load_firmware(priv, 1, fw);
 	release_firmware(fw);
 	if (ret) {
-		dev_err(&spi->dev, "agc cal firmware load failed\n");
+		dev_err(priv->dev, "AGC CAL firmware load failed\n");
 		return ret;
 	}
 
-	ret = sx1301_page_read(spi, 0, 105, &val);
-	if (ret) {
-		dev_err(&spi->dev, "0|105 read failed\n");
+	ret = sx1301_field_write(priv, F_FORCE_HOST_RADIO_CTRL, 0);
+	if (ret)
 		return ret;
-	}
-
-	val &= ~REG_0_105_FORCE_HOST_RADIO_CTRL;
-
-	ret = sx1301_page_write(spi, 0, 105, val);
-	if (ret) {
-		dev_err(&spi->dev, "0|105 write failed\n");
-		return ret;
-	}
 
 	val = BIT(4); /* with DAC gain=3 */
 	if (false)
 		val |= BIT(5); /* SX1255 */
 
-	ret = sx1301_page_write(spi, 0, REG_0_RADIO_SELECT, val);
-	if (ret) {
-		dev_err(&spi->dev, "radio select write failed\n");
+	ret = regmap_write(priv->regmap, SX1301_CHRS, val);
+	if (ret)
 		return ret;
-	}
 
-	ret = sx1301_page_read(spi, 0, REG_0_MCU, &val);
-	if (ret) {
-		dev_err(&spi->dev, "MCU read (0) failed\n");
+	ret = sx1301_field_write(priv, F_MCU_RST_1, 0);
+	if (ret)
 		return ret;
-	}
-
-	val &= ~REG_0_MCU_RST_1;
-
-	ret = sx1301_page_write(spi, 0, REG_0_MCU, val);
-	if (ret) {
-		dev_err(&spi->dev, "MCU write (0) failed\n");
-		return ret;
-	}
 
 	ret = sx1301_agc_ram_read(priv, 0x20, &val);
 	if (ret) {
-		dev_err(&spi->dev, "AGC RAM data read failed\n");
+		dev_err(priv->dev, "AGC RAM data read failed\n");
 		return ret;
 	}
 
-	dev_info(&spi->dev, "AGC calibration firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "AGC calibration firmware version %u\n", (unsigned)val);
 
-	if (val != 2) {
-		dev_err(&spi->dev, "unexpected firmware version, expecting %u\n", 2);
+	if (val != SX1301_MCU_AGC_CAL_FW_VERSION) {
+		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
+				SX1301_MCU_AGC_CAL_FW_VERSION);
 		return -ENXIO;
 	}
 
-	ret = sx1301_page_switch(spi, 3);
-	if (ret) {
-		dev_err(&spi->dev, "page switch 3 failed\n");
+	ret = sx1301_field_write(priv, F_EMERGENCY_FORCE_HOST_CTRL, 0);
+	if (ret)
 		return ret;
-	}
 
-	ret = sx1301_read(priv, REG_EMERGENCY_FORCE, &val);
-	if (ret) {
-		dev_err(&spi->dev, "emergency force read failed\n");
-		return ret;
-	}
-
-	val &= ~REG_EMERGENCY_FORCE_HOST_CTRL;
-
-	ret = sx1301_write(priv, REG_EMERGENCY_FORCE, val);
-	if (ret) {
-		dev_err(&spi->dev, "emergency force write failed\n");
-		return ret;
-	}
-
-	dev_err(&spi->dev, "starting calibration...\n");
+	dev_err(priv->dev, "starting calibration...\n");
 	msleep(2300);
 
-	ret = sx1301_read(priv, REG_EMERGENCY_FORCE, &val);
-	if (ret) {
-		dev_err(&spi->dev, "emergency force read (1) failed\n");
+	ret = sx1301_field_write(priv, F_EMERGENCY_FORCE_HOST_CTRL, 1);
+	if (ret)
 		return ret;
-	}
 
-	val |= REG_EMERGENCY_FORCE_HOST_CTRL;
-
-	ret = sx1301_write(priv, REG_EMERGENCY_FORCE, val);
-	if (ret) {
-		dev_err(&spi->dev, "emergency force write (1) failed\n");
+	ret = regmap_read(priv->regmap, SX1301_AGCSTS, &cal);
+	if (ret)
 		return ret;
-	}
 
-	ret = sx1301_read(priv, REG_MCU_AGC_STATUS, &val);
-	if (ret) {
-		dev_err(&spi->dev, "AGC status read failed\n");
-		return ret;
-	}
-
-	dev_info(&spi->dev, "AGC status: %02x\n", (unsigned)val);
-	if ((val & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
-		dev_err(&spi->dev, "AGC calibration failed\n");
+	dev_info(priv->dev, "AGC status: %02x\n", cal);
+	if ((cal & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
+		dev_err(priv->dev, "AGC calibration failed\n");
 		return -ENXIO;
 	}
 
@@ -985,7 +936,7 @@ static int sx1301_probe(struct spi_device *spi)
 
 	/* calibration */
 
-	ret = sx1301_agc_calibrate(spi);
+	ret = sx1301_agc_calibrate(priv);
 	if (ret)
 		return ret;
 
