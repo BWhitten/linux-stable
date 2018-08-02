@@ -869,9 +869,13 @@ static int sx1301_probe(struct spi_device *spi)
 	spi_setup(spi);
 
 	netdev = alloc_loradev(sizeof(*priv));
-	if (!netdev) {
-		ret = -ENOMEM;
-		goto err_alloc_loradev;
+	if (!netdev)
+		return -ENOMEM;
+
+	ret = devm_lora_register_netdev(&spi->dev, netdev);
+	if (ret) {
+		free_loradev(netdev);
+		return ret;
 	}
 
 	priv = netdev_priv(netdev);
@@ -885,7 +889,7 @@ static int sx1301_probe(struct spi_device *spi)
 	if (IS_ERR(priv->regmap)) {
 		ret = PTR_ERR(priv->regmap);
 		dev_err(&spi->dev, "Regmap allocation failed: %d\n", ret);
-		return err_regmap;
+		return ret;
 	}
 
 	for (i = 0; i < ARRAY_SIZE(sx1301_reg_fields); i++) {
@@ -897,38 +901,37 @@ static int sx1301_probe(struct spi_device *spi)
 		if (IS_ERR(priv->regmap_fields[i])) {
 			ret = PTR_ERR(priv->regmap_fields[i]);
 			dev_err(&spi->dev, "Cannot allocate regmap field: %d\n", ret);
-			goto err_regmap;
+			return ret;
 		}
 	}
 
 	ret = regmap_read(priv->regmap, SX1301_VER, &ver);
 	if (ret) {
 		dev_err(&spi->dev, "version read failed\n");
-		goto err_version;
+		return ret;
 	}
 
 	if (ver != 103) {
 		dev_err(&spi->dev, "unexpected version: %u\n", ver);
-		ret = -ENXIO;
-		goto err_version;
+		return -ENXIO;
 	}
 
 	ret = sx1301_write(spi, REG_PAGE_RESET, 0);
 	if (ret) {
 		dev_err(&spi->dev, "page/reset write failed\n");
-		goto err_init_page;
+		return ret;
 	}
 
 	ret = sx1301_soft_reset(spi);
 	if (ret) {
 		dev_err(&spi->dev, "soft reset failed\n");
-		goto err_soft_reset;
+		return ret;
 	}
 
 	ret = sx1301_read(spi, 16, &val);
 	if (ret) {
 		dev_err(&spi->dev, "16 read failed\n");
-		goto err_read_global_en_0;
+		return ret;
 	}
 
 	val &= ~REG_16_GLOBAL_EN;
@@ -936,13 +939,13 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, 16, val);
 	if (ret) {
 		dev_err(&spi->dev, "16 write failed\n");
-		goto err_write_global_en_0;
+		return ret;
 	}
 
 	ret = sx1301_read(spi, 17, &val);
 	if (ret) {
 		dev_err(&spi->dev, "17 read failed\n");
-		goto err_read_clk32m_0;
+		return ret;
 	}
 
 	val &= ~REG_17_CLK32M_EN;
@@ -950,7 +953,7 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, 17, val);
 	if (ret) {
 		dev_err(&spi->dev, "17 write failed\n");
-		goto err_write_clk32m_0;
+		return ret;
 	}
 
 	ret = sx1301_page_read(spi, 2, 43, &val);
@@ -1003,8 +1006,7 @@ static int sx1301_probe(struct spi_device *spi)
 
 	priv->radio_a_ctrl = spi_alloc_master(&spi->dev, sizeof(*radio));
 	if (!priv->radio_a_ctrl) {
-		ret = -ENOMEM;
-		goto err_radio_a_alloc;
+		return -ENOMEM;
 	}
 
 	sx1301_radio_setup(priv->radio_a_ctrl);
@@ -1019,15 +1021,14 @@ static int sx1301_probe(struct spi_device *spi)
 	if (ret) {
 		dev_err(&spi->dev, "radio A SPI register failed\n");
 		spi_controller_put(priv->radio_a_ctrl);
-		goto err_radio_a_register;
+		return ret;
 	}
 
 	/* radio B */
 
 	priv->radio_b_ctrl = spi_alloc_master(&spi->dev, sizeof(*radio));
 	if (!priv->radio_b_ctrl) {
-		ret = -ENOMEM;
-		goto err_radio_b_alloc;
+		return -ENOMEM;
 	}
 
 	sx1301_radio_setup(priv->radio_b_ctrl);
@@ -1042,7 +1043,7 @@ static int sx1301_probe(struct spi_device *spi)
 	if (ret) {
 		dev_err(&spi->dev, "radio B SPI register failed\n");
 		spi_controller_put(priv->radio_b_ctrl);
-		goto err_radio_b_register;
+		return ret;
 	}
 
 	/* GPIO */
@@ -1050,7 +1051,7 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_read(spi, REG_GPIO_MODE, &val);
 	if (ret) {
 		dev_err(&spi->dev, "GPIO mode read failed\n");
-		goto err_read_gpio_mode;
+		return ret;
 	}
 
 	val |= GENMASK(4, 0);
@@ -1058,13 +1059,13 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, REG_GPIO_MODE, val);
 	if (ret) {
 		dev_err(&spi->dev, "GPIO mode write failed\n");
-		goto err_write_gpio_mode;
+		return ret;
 	}
 
 	ret = sx1301_read(spi, REG_GPIO_SELECT_OUTPUT, &val);
 	if (ret) {
 		dev_err(&spi->dev, "GPIO select output read failed\n");
-		goto err_read_gpio_select_output;
+		return ret;
 	}
 
 	val &= ~GENMASK(3, 0);
@@ -1073,7 +1074,7 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, REG_GPIO_SELECT_OUTPUT, val);
 	if (ret) {
 		dev_err(&spi->dev, "GPIO select output write failed\n");
-		goto err_write_gpio_select_output;
+		return ret;
 	}
 
 	/* TODO LBT */
@@ -1081,7 +1082,7 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_read(spi, 16, &val);
 	if (ret) {
 		dev_err(&spi->dev, "16 read (1) failed\n");
-		goto err_read_global_en_1;
+		return ret;
 	}
 
 	val |= REG_16_GLOBAL_EN;
@@ -1089,13 +1090,13 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, 16, val);
 	if (ret) {
 		dev_err(&spi->dev, "16 write (1) failed\n");
-		goto err_write_global_en_1;
+		return ret;
 	}
 
 	ret = sx1301_read(spi, 17, &val);
 	if (ret) {
 		dev_err(&spi->dev, "17 read (1) failed\n");
-		goto err_read_clk32m_1;
+		return ret;
 	}
 
 	val |= REG_17_CLK32M_EN;
@@ -1103,50 +1104,24 @@ static int sx1301_probe(struct spi_device *spi)
 	ret = sx1301_write(spi, 17, val);
 	if (ret) {
 		dev_err(&spi->dev, "17 write (1) failed\n");
-		goto err_write_clk32m_1;
+		return ret;
 	}
 
 	/* calibration */
 
 	ret = sx1301_agc_calibrate(spi);
 	if (ret)
-		goto err_agc_calibrate;
+		return ret;
 
 	/* TODO */
 
 	ret = sx1301_load_all_firmware(spi);
 	if (ret)
-		goto err_load_firmware;
+		return ret;
 
 	dev_info(&spi->dev, "SX1301 module probed\n");
 
 	return 0;
-
-err_load_firmware:
-err_agc_calibrate:
-err_write_clk32m_1:
-err_read_clk32m_1:
-err_write_global_en_1:
-err_read_global_en_1:
-err_write_gpio_select_output:
-err_read_gpio_select_output:
-err_write_gpio_mode:
-err_read_gpio_mode:
-err_radio_b_register:
-err_radio_b_alloc:
-err_radio_a_register:
-err_radio_a_alloc:
-err_write_clk32m_0:
-err_read_clk32m_0:
-err_write_global_en_0:
-err_read_global_en_0:
-err_soft_reset:
-err_init_page:
-err_version:
-err_regmap:
-	free_loradev(netdev);
-err_alloc_loradev:
-	return ret;
 }
 
 static int sx1301_remove(struct spi_device *spi)
