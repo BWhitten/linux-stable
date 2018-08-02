@@ -3,6 +3,7 @@
  * Semtech SX1301 LoRa concentrator
  *
  * Copyright (c) 2018 Andreas Färber
+ * Copyright (c) 2018 Ben Whitten
  *
  * Based on SX1301 HAL code:
  * Copyright (c) 2013 Semtech-Cycleo
@@ -19,6 +20,9 @@
 #include <linux/of_gpio.h>
 #include <linux/lora/dev.h>
 #include <linux/spi/spi.h>
+#include <linux/regmap.h>
+
+#include "sx1301.h"
 
 #define REG_PAGE_RESET			0
 #define REG_VERSION			1
@@ -65,6 +69,213 @@
 
 #define REG_EMERGENCY_FORCE_HOST_CTRL	BIT(0)
 
+enum sx1301_fields {
+	F_SOFT_RESET,
+	F_START_BIST0,
+	F_START_BIST1,
+	F_BIST0_FINISHED,
+	F_BIST1_FINISHED,
+	F_GLOBAL_EN,
+	F_CLK32M_EN,
+	F_RADIO_A_EN,
+	F_RADIO_B_EN,
+	F_RADIO_RST,
+
+	F_RX_INVERT_IQ,
+	F_MODEM_INVERT_IQ,
+	F_MBWSSF_MODEM_INVERT_IQ,
+	F_RX_EDGE_SELECT,
+	F_MISC_RADIO_EN,
+	F_FSK_MODEM_INVERT_IQ,
+
+	F_RSSI_BB_FILTER_ALPHA,
+	F_RSSI_DEC_FILTER_ALPHA,
+	F_RSSI_CHANN_FILTER_ALPHA,
+
+	F_DEC_GAIN_OFFSET,
+	F_CHAN_GAIN_OFFSET,
+
+	F_LLR_SCALE,
+	F_SNR_AVG_CST,
+
+	F_CORR_NUM_SAME_PEAK,
+	F_CORR_MAC_GAIN,
+
+	F_FSK_CH_BW_EXPO,
+	F_FSK_RSSI_LENGTH,
+	F_FSK_RX_INVERT,
+	F_FSK_PKT_MODE,
+
+	F_FSK_PSIZE,
+	F_FSK_CRC_EN,
+	F_FSK_DCFREE_ENC,
+	F_FSK_CRC_IBM,
+
+	F_FSK_ERROR_OSR_TOL,
+	F_FSK_RADIO_SELECT,
+
+	F_TX_MODE,
+	F_TX_ZERO_PAD,
+	F_TX_EDGE_SELECT,
+	F_TX_EDGE_SELECT_TOP,
+
+	F_TX_GAIN,
+	F_TX_CHIRP_LOW_PASS,
+	F_TX_FCC_WIDEBAND,
+	F_TX_SWAP_IQ,
+
+	F_FSK_TX_GAUSSIAN_EN,
+	F_FSK_TX_GAUSSIAN_SELECT_BT,
+	F_FSK_TX_PATTERN_EN,
+	F_FSK_TX_PREAMBLE_SEQ,
+	F_FSK_TX_PSIZE,
+
+	F_FORCE_HOST_RADIO_CTRL,
+	F_FORCE_HOST_FE_CTRL,
+	F_FORCE_DEC_FILTER_GAIN,
+
+	F_MCU_RST_0,
+	F_MCU_RST_1,
+	F_MCU_SELECT_MUX_0,
+	F_MCU_SELECT_MUX_1,
+	F_MCU_CORRUPTION_DETECTED_0,
+	F_MCU_CORRUPTION_DETECTED_1,
+	F_MCU_SELECT_EDGE_0,
+	F_MCU_SELECT_EDGE_1,
+
+	F_EMERGENCY_FORCE_HOST_CTRL,
+};
+
+static const struct reg_field sx1301_reg_fields[] = {
+	/* PAGE */
+	[F_SOFT_RESET]		= REG_FIELD(SX1301_PAGE, 7, 7),
+	/* BIST */
+	[F_START_BIST0]		= REG_FIELD(SX1301_BIST, 0, 0),
+	[F_START_BIST1]		= REG_FIELD(SX1301_BIST, 1, 1),
+	/* BIST_S */
+	[F_BIST0_FINISHED]	= REG_FIELD(SX1301_BIST_S, 0, 0),
+	[F_BIST1_FINISHED]	= REG_FIELD(SX1301_BIST_S, 1, 1),
+	/* GEN */
+	[F_GLOBAL_EN]		= REG_FIELD(SX1301_GEN,  3, 3),
+	/* CKEN */
+	[F_CLK32M_EN]		= REG_FIELD(SX1301_CKEN, 0, 0),
+	/* RADIO_CFG */
+	[F_RADIO_A_EN]		= REG_FIELD(SX1301_RADIO_CFG, 0, 0),
+	[F_RADIO_B_EN]		= REG_FIELD(SX1301_RADIO_CFG, 1, 1),
+	[F_RADIO_RST]		= REG_FIELD(SX1301_RADIO_CFG, 2, 2),
+
+	/* IQCFG */
+	[F_RX_INVERT_IQ]	= REG_FIELD(SX1301_IQCFG, 0, 0),
+	[F_MODEM_INVERT_IQ]	= REG_FIELD(SX1301_IQCFG, 1, 1),
+	[F_MBWSSF_MODEM_INVERT_IQ]	= REG_FIELD(SX1301_IQCFG, 2, 2),
+	[F_RX_EDGE_SELECT]	= REG_FIELD(SX1301_IQCFG, 3, 3),
+	[F_MISC_RADIO_EN]	= REG_FIELD(SX1301_IQCFG, 4, 4),
+	[F_FSK_MODEM_INVERT_IQ]	= REG_FIELD(SX1301_IQCFG, 5, 5),
+
+	/* RSSI_X_FILTER_ALPHA */
+	[F_RSSI_BB_FILTER_ALPHA] =
+		REG_FIELD(SX1301_RSSI_BB_FILTER_ALPHA, 0, 4),
+	[F_RSSI_DEC_FILTER_ALPHA] =
+		REG_FIELD(SX1301_RSSI_DEC_FILTER_ALPHA, 0, 4),
+	[F_RSSI_CHANN_FILTER_ALPHA] =
+		REG_FIELD(SX1301_RSSI_CHANN_FILTER_ALPHA, 0, 4),
+
+	/* GAIN_OFFSET */
+	[F_DEC_GAIN_OFFSET]	= REG_FIELD(SX1301_GAIN_OFFSET, 0, 3),
+	[F_CHAN_GAIN_OFFSET]	= REG_FIELD(SX1301_GAIN_OFFSET, 4, 7),
+
+	/* MISC_CFG1 */
+	[F_LLR_SCALE]		= REG_FIELD(SX1301_MISC_CFG1, 0, 3),
+	[F_SNR_AVG_CST]		= REG_FIELD(SX1301_MISC_CFG1, 4, 5),
+
+	/* CORR_CFG */
+	[F_CORR_NUM_SAME_PEAK]	= REG_FIELD(SX1301_CORR_CFG, 0, 3),
+	[F_CORR_MAC_GAIN]	= REG_FIELD(SX1301_CORR_CFG, 4, 6),
+
+	/* FSK_CFG1 */
+	[F_FSK_CH_BW_EXPO]	= REG_FIELD(SX1301_FSK_CFG1, 0, 2),
+	[F_FSK_RSSI_LENGTH]	= REG_FIELD(SX1301_FSK_CFG1, 3, 5),
+	[F_FSK_RX_INVERT]	= REG_FIELD(SX1301_FSK_CFG1, 6, 6),
+	[F_FSK_PKT_MODE]	= REG_FIELD(SX1301_FSK_CFG1, 7, 7),
+
+	/* FSK_CFG2 */
+	[F_FSK_PSIZE]		= REG_FIELD(SX1301_FSK_CFG2, 0, 2),
+	[F_FSK_CRC_EN]		= REG_FIELD(SX1301_FSK_CFG2, 3, 3),
+	[F_FSK_DCFREE_ENC]	= REG_FIELD(SX1301_FSK_CFG2, 4, 5),
+	[F_FSK_CRC_IBM]		= REG_FIELD(SX1301_FSK_CFG2, 6, 6),
+
+	/* FSK_ERROR_OSR_TOL */
+	[F_FSK_ERROR_OSR_TOL]	= REG_FIELD(SX1301_FSK_ERROR_OSR_TOL, 0, 4),
+	[F_FSK_RADIO_SELECT]	= REG_FIELD(SX1301_FSK_ERROR_OSR_TOL, 7, 7),
+
+	/* TX_CFG1 */
+	[F_TX_MODE]		= REG_FIELD(SX1301_TX_CFG1, 0, 0),
+	[F_TX_ZERO_PAD]		= REG_FIELD(SX1301_TX_CFG1, 1, 4),
+	[F_TX_EDGE_SELECT]	= REG_FIELD(SX1301_TX_CFG1, 5, 5),
+	[F_TX_EDGE_SELECT_TOP]	= REG_FIELD(SX1301_TX_CFG1, 6, 6),
+
+	/* TX_CFG2 */
+	[F_TX_GAIN]		= REG_FIELD(SX1301_TX_CFG2, 0, 1),
+	[F_TX_CHIRP_LOW_PASS]	= REG_FIELD(SX1301_TX_CFG2, 2, 4),
+	[F_TX_FCC_WIDEBAND]	= REG_FIELD(SX1301_TX_CFG2, 5, 6),
+	[F_TX_SWAP_IQ]		= REG_FIELD(SX1301_TX_CFG2, 7, 7),
+
+	/* FSK_TX */
+	[F_FSK_TX_GAUSSIAN_EN]	= REG_FIELD(SX1301_FSK_TX, 0, 0),
+	[F_FSK_TX_GAUSSIAN_SELECT_BT]	= REG_FIELD(SX1301_FSK_TX, 1, 2),
+	[F_FSK_TX_PATTERN_EN]	= REG_FIELD(SX1301_FSK_TX, 3, 3),
+	[F_FSK_TX_PREAMBLE_SEQ]	= REG_FIELD(SX1301_FSK_TX, 4, 4),
+	[F_FSK_TX_PSIZE]	= REG_FIELD(SX1301_FSK_TX, 5, 7),
+
+	/* FORCE_CTRL */
+	[F_FORCE_HOST_RADIO_CTRL] = REG_FIELD(SX1301_FORCE_CTRL, 1, 1),
+	[F_FORCE_HOST_FE_CTRL]    = REG_FIELD(SX1301_FORCE_CTRL, 2, 2),
+	[F_FORCE_DEC_FILTER_GAIN] = REG_FIELD(SX1301_FORCE_CTRL, 3, 3),
+
+	/* MCU_CTRL */
+	[F_MCU_RST_0]		= REG_FIELD(SX1301_MCU_CTRL, 0, 0),
+	[F_MCU_RST_1]		= REG_FIELD(SX1301_MCU_CTRL, 1, 1),
+	[F_MCU_SELECT_MUX_0]	= REG_FIELD(SX1301_MCU_CTRL, 2, 2),
+	[F_MCU_SELECT_MUX_1]	= REG_FIELD(SX1301_MCU_CTRL, 3, 3),
+	[F_MCU_CORRUPTION_DETECTED_0] = REG_FIELD(SX1301_MCU_CTRL, 4, 4),
+	[F_MCU_CORRUPTION_DETECTED_1] = REG_FIELD(SX1301_MCU_CTRL, 5, 5),
+	[F_MCU_SELECT_EDGE_0]	= REG_FIELD(SX1301_MCU_CTRL, 6, 6),
+	[F_MCU_SELECT_EDGE_1]	= REG_FIELD(SX1301_MCU_CTRL, 7, 7),
+
+	/* EMERGENCY_FORCE_HOST_CTRL */
+	[F_EMERGENCY_FORCE_HOST_CTRL] =
+		REG_FIELD(SX1301_EMERGENCY_FORCE_HOST_CTRL, 0, 0),
+};
+
+static const struct regmap_range_cfg sx1301_ranges[] = {
+	{
+		.name = "Pages",
+
+		.range_min = SX1301_VIRT_BASE,
+		.range_max = SX1301_MAX_REGISTER,
+
+		.selector_reg = SX1301_PAGE,
+		.selector_mask = 0x3,
+
+		.window_start = 0,
+		.window_len = SX1301_PAGE_LEN,
+	},
+};
+
+static struct regmap_config sx1301_regmap_config = {
+	.reg_bits = 8,
+	.val_bits = 8,
+
+	.cache_type = REGCACHE_NONE,
+
+	.read_flag_mask = 0,
+	.write_flag_mask = BIT(7),
+
+	.ranges = sx1301_ranges,
+	.num_ranges = ARRAY_SIZE(sx1301_ranges),
+	.max_register = SX1301_MAX_REGISTER,
+};
+
 struct spi_sx1301 {
 	struct spi_device *parent;
 	u8 page;
@@ -76,7 +287,28 @@ struct sx1301_priv {
 	struct gpio_desc *rst_gpio;
 	u8 cur_page;
 	struct spi_controller *radio_a_ctrl, *radio_b_ctrl;
+	struct regmap		*regmap;
+	struct regmap_field	*regmap_fields[ARRAY_SIZE(sx1301_reg_fields)];
 };
+
+static int sx1301_field_read(struct sx1301_priv *priv,
+		enum sx1301_fields field_id)
+{
+	int ret;
+	int val;
+
+	ret = regmap_field_read(priv->regmap_fields[field_id], &val);
+	if (ret)
+		return ret;
+
+	return val;
+}
+
+static int sx1301_field_write(struct sx1301_priv *priv,
+		enum sx1301_fields field_id, u8 val)
+{
+	return regmap_field_write(priv->regmap_fields[field_id], val);
+}
 
 static int sx1301_read_burst(struct spi_device *spi, u8 reg, u8 *val, size_t len)
 {
@@ -620,6 +852,8 @@ static int sx1301_probe(struct spi_device *spi)
 	struct spi_sx1301 *radio;
 	struct gpio_desc *rst;
 	int ret;
+	int i;
+	unsigned int ver;
 	u8 val;
 
 	rst = devm_gpiod_get_optional(&spi->dev, "reset", GPIOD_OUT_LOW);
@@ -634,18 +868,6 @@ static int sx1301_probe(struct spi_device *spi)
 	spi->bits_per_word = 8;
 	spi_setup(spi);
 
-	ret = sx1301_read(spi, REG_VERSION, &val);
-	if (ret) {
-		dev_err(&spi->dev, "version read failed\n");
-		goto err_version;
-	}
-
-	if (val != 103) {
-		dev_err(&spi->dev, "unexpected version: %u\n", val);
-		ret = -ENXIO;
-		goto err_version;
-	}
-
 	netdev = alloc_loradev(sizeof(*priv));
 	if (!netdev) {
 		ret = -ENOMEM;
@@ -658,6 +880,38 @@ static int sx1301_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, netdev);
 	SET_NETDEV_DEV(netdev, &spi->dev);
+
+	priv->regmap = devm_regmap_init_spi(spi, &sx1301_regmap_config);
+	if (IS_ERR(priv->regmap)) {
+		ret = PTR_ERR(priv->regmap);
+		dev_err(&spi->dev, "Regmap allocation failed: %d\n", ret);
+		return err_regmap;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(sx1301_reg_fields); i++) {
+		const struct reg_field *reg_fields = sx1301_reg_fields;
+
+		priv->regmap_fields[i] = devm_regmap_field_alloc(&spi->dev,
+				priv->regmap,
+				reg_fields[i]);
+		if (IS_ERR(priv->regmap_fields[i])) {
+			ret = PTR_ERR(priv->regmap_fields[i]);
+			dev_err(&spi->dev, "Cannot allocate regmap field: %d\n", ret);
+			goto err_regmap;
+		}
+	}
+
+	ret = regmap_read(priv->regmap, SX1301_VER, &ver);
+	if (ret) {
+		dev_err(&spi->dev, "version read failed\n");
+		goto err_version;
+	}
+
+	if (ver != 103) {
+		dev_err(&spi->dev, "unexpected version: %u\n", ver);
+		ret = -ENXIO;
+		goto err_version;
+	}
 
 	ret = sx1301_write(spi, REG_PAGE_RESET, 0);
 	if (ret) {
@@ -888,9 +1142,10 @@ err_write_global_en_0:
 err_read_global_en_0:
 err_soft_reset:
 err_init_page:
+err_version:
+err_regmap:
 	free_loradev(netdev);
 err_alloc_loradev:
-err_version:
 	return ret;
 }
 
@@ -927,4 +1182,5 @@ module_spi_driver(sx1301_spi_driver);
 
 MODULE_DESCRIPTION("SX1301 SPI driver");
 MODULE_AUTHOR("Andreas Färber <afaerber@suse.de>");
+MODULE_AUTHOR("Ben Whitten <ben.whitten@gmail.com>");
 MODULE_LICENSE("GPL");
