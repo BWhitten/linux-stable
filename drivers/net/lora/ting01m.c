@@ -19,6 +19,7 @@
 
 struct ting01m_priv {
 	struct lora_dev_priv lora;
+	u32 freq;
 };
 
 static void widora_reset_mcu(struct widora_device *widev)
@@ -27,6 +28,13 @@ static void widora_reset_mcu(struct widora_device *widev)
 	msleep(200);
 	gpiod_set_value_cansleep(widev->rst, 1);
 	msleep(500);
+}
+
+static u32 ting01m_get_freq(struct net_device *netdev)
+{
+	struct ting01m_priv *priv = netdev_priv(netdev);
+
+	return priv->freq;
 }
 
 static netdev_tx_t ting01m_loradev_start_xmit(struct sk_buff *skb, struct net_device *netdev)
@@ -117,6 +125,7 @@ static const struct serdev_device_ops widora_serdev_client_ops = {
 static int widora_probe(struct serdev_device *sdev)
 {
 	struct widora_device *widev;
+	struct ting01m_priv *priv;
 	char *sz;
 	int ret;
 
@@ -181,6 +190,10 @@ static int widora_probe(struct serdev_device *sdev)
 
 	widev->netdev->netdev_ops = &ting01m_net_device_ops;
 	SET_NETDEV_DEV(widev->netdev, &sdev->dev);
+
+	priv = netdev_priv(widev->netdev);
+	priv->lora.get_freq = ting01m_get_freq;
+	priv->freq = 433000000;
 
 	ret = register_loradev(widev->netdev);
 	if (ret)
