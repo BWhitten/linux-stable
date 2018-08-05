@@ -37,7 +37,7 @@ void unregister_loradev(struct net_device *dev);
 int open_loradev(struct net_device *dev);
 void close_loradev(struct net_device *dev);
 
-struct lora_priv {
+struct lora_dev_priv {
 	struct net_device *dev;
 };
 

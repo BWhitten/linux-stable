@@ -65,7 +65,7 @@ static void lora_setup(struct net_device *dev)
 struct net_device *alloc_loradev(int sizeof_priv)
 {
 	struct net_device *dev;
-	struct lora_priv *priv;
+	struct lora_dev_priv *priv;
 
 	dev = alloc_netdev(sizeof_priv, "lora%d", NET_NAME_UNKNOWN, lora_setup);
 	if (!dev)
