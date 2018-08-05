@@ -18,7 +18,7 @@
 #include "ting01m.h"
 
 struct ting01m_priv {
-	struct lora_priv lora;
+	struct lora_dev_priv lora;
 };
 
 static void widora_reset_mcu(struct widora_device *widev)

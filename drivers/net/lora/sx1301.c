@@ -72,7 +72,7 @@ struct spi_sx1301 {
 };
 
 struct sx1301_priv {
-	struct lora_priv lora;
+	struct lora_dev_priv lora;
 	struct gpio_desc *rst_gpio;
 	u8 cur_page;
 	struct spi_controller *radio_a_ctrl, *radio_b_ctrl;

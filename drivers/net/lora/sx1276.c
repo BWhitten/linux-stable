@@ -49,7 +49,7 @@
 #define REG_DIO_MAPPING1_DIO0_MASK	GENMASK(7, 6)
 
 struct sx1276_priv {
-	struct lora_priv lora;
+	struct lora_dev_priv lora;
 	struct spi_device *spi;
 
 	size_t fifosize;

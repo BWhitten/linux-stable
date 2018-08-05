@@ -17,7 +17,7 @@
 #include "rn2483.h"
 
 struct rn2483_priv {
-	struct lora_priv lora;
+	struct lora_dev_priv lora;
 };
 
 static netdev_tx_t rn2483_loradev_start_xmit(struct sk_buff *skb, struct net_device *netdev)
