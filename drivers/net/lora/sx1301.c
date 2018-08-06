@@ -663,16 +663,15 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 	return 0;
 }
 
-static int sx1301_load_all_firmware(struct spi_device *spi)
+static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 {
-	struct sx1301_priv *priv = spi_get_drvdata(spi);
 	const struct firmware *fw;
 	u8 val;
 	int ret;
 
 	ret = request_firmware(&fw, "sx1301_arb.bin", priv->dev);
 	if (ret) {
-		dev_err(priv->dev, "arb firmware file load failed\n");
+		dev_err(priv->dev, "ARB firmware file load failed\n");
 		return ret;
 	}
 
@@ -683,7 +682,7 @@ static int sx1301_load_all_firmware(struct spi_device *spi)
 
 	ret = request_firmware(&fw, "sx1301_agc.bin", priv->dev);
 	if (ret) {
-		dev_err(priv->dev, "agc firmware file load failed\n");
+		dev_err(priv->dev, "AGC firmware file load failed\n");
 		return ret;
 	}
 
@@ -692,63 +691,53 @@ static int sx1301_load_all_firmware(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	ret = sx1301_page_read(spi, 0, 105, &val);
-	if (ret) {
-		dev_err(&spi->dev, "0|105 read failed\n");
+	ret = sx1301_field_write(priv, F_FORCE_HOST_RADIO_CTRL, 0);
+	if (ret)
 		return ret;
-	}
-
-	val &= ~(REG_0_105_FORCE_HOST_RADIO_CTRL | REG_0_105_FORCE_HOST_FE_CTRL | REG_0_105_FORCE_DEC_FILTER_GAIN);
-
-	ret = sx1301_page_write(spi, 0, 105, val);
-	if (ret) {
-		dev_err(&spi->dev, "0|105 write failed\n");
+	ret = sx1301_field_write(priv, F_FORCE_HOST_FE_CTRL, 0);
+	if (ret)
 		return ret;
-	}
-
-	ret = sx1301_page_write(spi, 0, REG_0_RADIO_SELECT, 0);
-	if (ret) {
-		dev_err(&spi->dev, "radio select write failed\n");
+	ret = sx1301_field_write(priv, F_FORCE_DEC_FILTER_GAIN, 0);
+	if (ret)
 		return ret;
-	}
 
-	ret = sx1301_page_read(spi, 0, REG_0_MCU, &val);
-	if (ret) {
-		dev_err(&spi->dev, "MCU read (0) failed\n");
+	ret = regmap_write(priv->regmap, SX1301_CHRS, 0);
+	if (ret)
 		return ret;
-	}
 
-	val &= ~(REG_0_MCU_RST_1 | REG_0_MCU_RST_0);
-
-	ret = sx1301_page_write(spi, 0, REG_0_MCU, val);
-	if (ret) {
-		dev_err(&spi->dev, "MCU write (0) failed\n");
+	/* Release the CPUs */
+	ret = sx1301_field_write(priv, F_MCU_RST_0, 0);
+	if (ret)
 		return ret;
-	}
+	ret = sx1301_field_write(priv, F_MCU_RST_1, 0);
+	if (ret)
+		return ret;
 
 	ret = sx1301_agc_ram_read(priv, 0x20, &val);
 	if (ret) {
-		dev_err(&spi->dev, "AGC RAM data read failed\n");
+		dev_err(priv->dev, "AGC RAM data read failed\n");
 		return ret;
 	}
 
-	dev_info(&spi->dev, "AGC firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "AGC firmware version %u\n", (unsigned)val);
 
-	if (val != 4) {
-		dev_err(&spi->dev, "unexpected firmware version, expecting %u\n", 4);
+	if (val != SX1301_MCU_AGC_FW_VERSION) {
+		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
+				SX1301_MCU_AGC_FW_VERSION);
 		return -ENXIO;
 	}
 
 	ret = sx1301_arb_ram_read(priv, 0x20, &val);
 	if (ret) {
-		dev_err(&spi->dev, "ARB RAM data read failed\n");
+		dev_err(priv->dev, "ARB RAM data read failed\n");
 		return ret;
 	}
 
-	dev_info(&spi->dev, "ARB firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "ARB firmware version %u\n", (unsigned)val);
 
-	if (val != 1) {
-		dev_err(&spi->dev, "unexpected firmware version, expecting %u\n", 1);
+	if (val != SX1301_MCU_ARB_FW_VERSION) {
+		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
+				SX1301_MCU_ARB_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -942,7 +931,7 @@ static int sx1301_probe(struct spi_device *spi)
 
 	/* TODO */
 
-	ret = sx1301_load_all_firmware(spi);
+	ret = sx1301_load_all_firmware(priv);
 	if (ret)
 		return ret;
 
