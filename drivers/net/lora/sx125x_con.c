@@ -32,6 +32,8 @@ static int sx125x_con_probe(struct platform_device *pdev)
 	const struct regmap_bus *regmap_bus;
 	int ret;
 
+	dev_info(dev, "Entered probe for con\n");
+
 	regmap_bus = sx1301_concentrator_regmap_bus();
 	regmap = devm_regmap_init(dev, regmap_bus, dev,
 			&sx125x_regmap_config);
@@ -40,6 +42,8 @@ static int sx125x_con_probe(struct platform_device *pdev)
 		dev_err(dev, "Regmap allocation failed: %d\n", ret);
 		return ret;
 	}
+
+	dev_info(dev, "Got the regmap, about to core probe");
 
 	return sx125x_core_probe(dev, regmap);
 }

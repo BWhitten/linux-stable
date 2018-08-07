@@ -610,6 +610,9 @@ static int sx1301_regmap_bus_read(void *context, unsigned int reg,
 	if (ret)
 		return ret;
 
+	dev_info(dev, "reading radio %d\n", radio);
+	dev_info(dev->parent, "concentrator\n");
+
 	if (radio == 0) {
 		addr = SX1301_RADIO_A_SPI_ADDR;
 		data = SX1301_RADIO_A_SPI_DATA;
