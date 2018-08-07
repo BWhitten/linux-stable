@@ -753,6 +753,109 @@ static void sx1301_radio_setup(struct spi_controller *ctrl)
 	ctrl->transfer_one = sx1301_radio_spi_transfer_one;
 }
 
+static int sx1301_regmap_bus_write(void *context, unsigned int reg,
+		unsigned int val)
+{
+	struct device *dev = context;
+	struct sx1301_priv *priv = dev_get_drvdata(dev->parent);
+	unsigned int addr, data, cs, rb;
+	u32 radio;
+	int ret;
+
+	/* Device address */
+	ret = of_property_read_u32(dev->of_node, "reg", &radio);
+	if (ret)
+		return ret;
+
+	if (radio == 0) {
+		addr = SX1301_RADIO_A_SPI_ADDR;
+		data = SX1301_RADIO_A_SPI_DATA;
+		cs = SX1301_RADIO_A_SPI_CS;
+		rb = SX1301_RADIO_A_SPI_DATA_RB;
+	} else {
+		addr = SX1301_RADIO_B_SPI_ADDR;
+		data = SX1301_RADIO_B_SPI_DATA;
+		cs = SX1301_RADIO_B_SPI_CS;
+		rb = SX1301_RADIO_B_SPI_DATA_RB;
+	}
+
+	ret = regmap_write(priv->regmap, cs, 0);
+	if (ret)
+		return ret;
+	ret = regmap_write(priv->regmap, addr, reg);
+	if (ret)
+		return ret;
+	ret = regmap_write(priv->regmap, data, val);
+	if (ret)
+		return ret;
+	ret = regmap_write(priv->regmap, cs, 1);
+	if (ret)
+		return ret;
+	ret = regmap_write(priv->regmap, cs, 0);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static int sx1301_regmap_bus_read(void *context, unsigned int reg,
+		unsigned int *val)
+{
+	struct device *dev = context;
+	struct sx1301_priv *priv = dev_get_drvdata(dev->parent);
+	unsigned int addr, data, cs, rb;
+	u32 radio;
+	int ret;
+
+	/* Device address */
+	ret = of_property_read_u32(dev->of_node, "reg", &radio);
+	if (ret)
+		return ret;
+
+	if (radio == 0) {
+		addr = SX1301_RADIO_A_SPI_ADDR;
+		data = SX1301_RADIO_A_SPI_DATA;
+		cs = SX1301_RADIO_A_SPI_CS;
+		rb = SX1301_RADIO_A_SPI_DATA_RB;
+	} else {
+		addr = SX1301_RADIO_B_SPI_ADDR;
+		data = SX1301_RADIO_B_SPI_DATA;
+		cs = SX1301_RADIO_B_SPI_CS;
+		rb = SX1301_RADIO_B_SPI_DATA_RB;
+	}
+
+	ret = regmap_write(priv->regmap, cs, 0);
+	if (ret)
+		return ret;
+	/* address to tx */
+	ret = regmap_write(priv->regmap, addr, reg);
+	if (ret)
+		return ret;
+	ret = regmap_write(priv->regmap, data, 0);
+	if (ret)
+		return ret;
+	ret = regmap_write(priv->regmap, cs, 1);
+	if (ret)
+		return ret;
+	ret = regmap_write(priv->regmap, cs, 0);
+	if (ret)
+		return ret;
+
+	/* reading */
+	return regmap_read(priv->regmap, rb, val);
+}
+
+static const struct regmap_bus sx1301_regmap_bus = {
+	.reg_write = sx1301_regmap_bus_write,
+	.reg_read = sx1301_regmap_bus_read,
+};
+
+const struct regmap_bus *sx1301_concentrator_regmap_bus(void)
+{
+	return &sx1301_regmap_bus;
+}
+EXPORT_SYMBOL_GPL(sx1301_concentrator_regmap_bus);
+
 static int sx1301_probe(struct spi_device *spi)
 {
 	struct net_device *netdev;

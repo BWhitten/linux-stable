@@ -173,4 +173,6 @@
 
 #define SX1301_MAX_REGISTER         (SX1301_PAGE_BASE(3) + 0x7F)
 
+const struct regmap_bus *sx1301_concentrator_regmap_bus(void);
+
 #endif
