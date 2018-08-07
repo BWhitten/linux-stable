@@ -17,57 +17,13 @@
 #include <linux/netdevice.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_platform.h>
 #include <linux/of_gpio.h>
 #include <linux/lora/dev.h>
 #include <linux/spi/spi.h>
 #include <linux/regmap.h>
 
 #include "sx1301.h"
-
-#define REG_PAGE_RESET			0
-#define REG_VERSION			1
-#define REG_MCU_PROM_ADDR		9
-#define REG_MCU_PROM_DATA		10
-#define REG_GPIO_SELECT_INPUT		27
-#define REG_GPIO_SELECT_OUTPUT		28
-#define REG_GPIO_MODE			29
-#define REG_MCU_AGC_STATUS		32
-#define REG_0_RADIO_SELECT		35
-#define REG_0_MCU			106
-#define REG_2_SPI_RADIO_A_DATA		33
-#define REG_2_SPI_RADIO_A_DATA_READBACK	34
-#define REG_2_SPI_RADIO_A_ADDR		35
-#define REG_2_SPI_RADIO_A_CS		37
-#define REG_2_SPI_RADIO_B_DATA		38
-#define REG_2_SPI_RADIO_B_DATA_READBACK	39
-#define REG_2_SPI_RADIO_B_ADDR		40
-#define REG_2_SPI_RADIO_B_CS		42
-#define REG_2_DBG_ARB_MCU_RAM_DATA	64
-#define REG_2_DBG_AGC_MCU_RAM_DATA	65
-#define REG_2_DBG_ARB_MCU_RAM_ADDR	80
-#define REG_2_DBG_AGC_MCU_RAM_ADDR	81
-#define REG_EMERGENCY_FORCE		127
-
-#define REG_PAGE_RESET_SOFT_RESET	BIT(7)
-
-#define REG_16_GLOBAL_EN		BIT(3)
-
-#define REG_17_CLK32M_EN		BIT(0)
-
-#define REG_0_105_FORCE_HOST_RADIO_CTRL		BIT(1)
-#define REG_0_105_FORCE_HOST_FE_CTRL		BIT(2)
-#define REG_0_105_FORCE_DEC_FILTER_GAIN		BIT(3)
-
-#define REG_0_MCU_RST_0			BIT(0)
-#define REG_0_MCU_RST_1			BIT(1)
-#define REG_0_MCU_SELECT_MUX_0		BIT(2)
-#define REG_0_MCU_SELECT_MUX_1		BIT(3)
-
-#define REG_2_43_RADIO_A_EN		BIT(0)
-#define REG_2_43_RADIO_B_EN		BIT(1)
-#define REG_2_43_RADIO_RST		BIT(2)
-
-#define REG_EMERGENCY_FORCE_HOST_CTRL	BIT(0)
 
 enum sx1301_fields {
 	F_SOFT_RESET,
@@ -287,8 +243,6 @@ struct sx1301_priv {
 	struct spi_device *spi;
 	struct lora_priv lora;
 	struct gpio_desc *rst_gpio;
-	u8 cur_page;
-	struct spi_controller *radio_a_ctrl, *radio_b_ctrl;
 	struct regmap		*regmap;
 	struct regmap_field	*regmap_fields[ARRAY_SIZE(sx1301_reg_fields)];
 };
@@ -318,11 +272,6 @@ static int sx1301_read_burst(struct sx1301_priv *priv, u8 reg, u8 *val, size_t l
 	return spi_write_then_read(priv->spi, &addr, 1, val, len);
 }
 
-static int sx1301_read(struct sx1301_priv *priv, u8 reg, u8 *val)
-{
-	return sx1301_read_burst(priv, reg, val, 1);
-}
-
 static int sx1301_write_burst(struct sx1301_priv *priv, u8 reg, const u8 *val, size_t len)
 {
 	u8 addr = reg | BIT(7);
@@ -332,148 +281,6 @@ static int sx1301_write_burst(struct sx1301_priv *priv, u8 reg, const u8 *val, s
 	};
 
 	return spi_sync_transfer(priv->spi, xfr, 2);
-}
-
-static int sx1301_write(struct sx1301_priv *priv, u8 reg, u8 val)
-{
-	return sx1301_write_burst(priv, reg, &val, 1);
-}
-
-static int sx1301_page_switch(struct spi_device *spi, u8 page)
-{
-	struct sx1301_priv *priv = spi_get_drvdata(spi);
-	int ret;
-
-	if (priv->cur_page == page)
-		return 0;
-
-	dev_dbg(&spi->dev, "switching to page %u\n", (unsigned)page);
-	ret = sx1301_write(priv, REG_PAGE_RESET, page & 0x3);
-	if (ret) {
-		dev_err(&spi->dev, "switching to page %u failed\n", (unsigned)page);
-		return ret;
-	}
-
-	priv->cur_page = page;
-
-	return 0;
-}
-
-static int sx1301_page_read(struct spi_device *spi, u8 page, u8 reg, u8 *val)
-{
-	int ret;
-	struct sx1301_priv *priv = spi_get_drvdata(spi);
-
-	ret = sx1301_page_switch(spi, page);
-	if (ret)
-		return ret;
-
-	return sx1301_read(priv, reg, val);
-}
-
-static int sx1301_page_write(struct spi_device *spi, u8 page, u8 reg, u8 val)
-{
-	int ret;
-	struct sx1301_priv *priv = spi_get_drvdata(spi);
-
-	ret = sx1301_page_switch(spi, page);
-	if (ret)
-		return ret;
-
-	return sx1301_write(priv, reg, val);
-}
-
-#define REG_RADIO_X_DATA		0
-#define REG_RADIO_X_DATA_READBACK	1
-#define REG_RADIO_X_ADDR		2
-#define REG_RADIO_X_CS			4
-
-static int sx1301_radio_set_cs(struct spi_controller *ctrl, bool enable)
-{
-	struct spi_sx1301 *ssx = spi_controller_get_devdata(ctrl);
-	u8 cs;
-	int ret;
-
-	dev_dbg(&ctrl->dev, "setting CS to %s\n", enable ? "1" : "0");
-
-	ret = sx1301_page_read(ssx->parent, ssx->page, ssx->regs + REG_RADIO_X_CS, &cs);
-	if (ret) {
-		dev_warn(&ctrl->dev, "failed to read CS (%d)\n", ret);
-		cs = 0;
-	}
-
-	if (enable)
-		cs |= BIT(0);
-	else
-		cs &= ~BIT(0);
-
-	ret = sx1301_page_write(ssx->parent, ssx->page, ssx->regs + REG_RADIO_X_CS, cs);
-	if (ret) {
-		dev_err(&ctrl->dev, "failed to write CS (%d)\n", ret);
-		return ret;
-	}
-
-	return 0;
-}
-
-static void sx1301_radio_spi_set_cs(struct spi_device *spi, bool enable)
-{
-	dev_dbg(&spi->dev, "setting SPI CS to %s\n", enable ? "1" : "0");
-
-	if (enable)
-		return;
-
-	sx1301_radio_set_cs(spi->controller, enable);
-}
-
-static int sx1301_radio_spi_transfer_one(struct spi_controller *ctrl,
-	struct spi_device *spi, struct spi_transfer *xfr)
-{
-	struct spi_sx1301 *ssx = spi_controller_get_devdata(ctrl);
-	const u8 *tx_buf = xfr->tx_buf;
-	u8 *rx_buf = xfr->rx_buf;
-	int ret;
-
-	if (xfr->len == 0 || xfr->len > 3)
-		return -EINVAL;
-
-	dev_dbg(&spi->dev, "transferring one (%u)\n", xfr->len);
-
-	if (tx_buf) {
-		ret = sx1301_page_write(ssx->parent, ssx->page, ssx->regs + REG_RADIO_X_ADDR, tx_buf ? tx_buf[0] : 0);
-		if (ret) {
-			dev_err(&spi->dev, "SPI radio address write failed\n");
-			return ret;
-		}
-
-		ret = sx1301_page_write(ssx->parent, ssx->page, ssx->regs + REG_RADIO_X_DATA, (tx_buf && xfr->len >= 2) ? tx_buf[1] : 0);
-		if (ret) {
-			dev_err(&spi->dev, "SPI radio data write failed\n");
-			return ret;
-		}
-
-		ret = sx1301_radio_set_cs(ctrl, true);
-		if (ret) {
-			dev_err(&spi->dev, "SPI radio CS set failed\n");
-			return ret;
-		}
-
-		ret = sx1301_radio_set_cs(ctrl, false);
-		if (ret) {
-			dev_err(&spi->dev, "SPI radio CS unset failed\n");
-			return ret;
-		}
-	}
-
-	if (rx_buf) {
-		ret = sx1301_page_read(ssx->parent, ssx->page, ssx->regs + REG_RADIO_X_DATA_READBACK, &rx_buf[xfr->len - 1]);
-		if (ret) {
-			dev_err(&spi->dev, "SPI radio data read failed\n");
-			return ret;
-		}
-	}
-
-	return 0;
 }
 
 static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr, u8 *val)
@@ -744,15 +551,6 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 	return 0;
 }
 
-static void sx1301_radio_setup(struct spi_controller *ctrl)
-{
-	ctrl->mode_bits = SPI_CS_HIGH | SPI_NO_CS;
-	ctrl->bits_per_word_mask = SPI_BPW_MASK(8);
-	ctrl->num_chipselect = 1;
-	ctrl->set_cs = sx1301_radio_spi_set_cs;
-	ctrl->transfer_one = sx1301_radio_spi_transfer_one;
-}
-
 static int sx1301_regmap_bus_write(void *context, unsigned int reg,
 		unsigned int val)
 {
@@ -860,7 +658,6 @@ static int sx1301_probe(struct spi_device *spi)
 {
 	struct net_device *netdev;
 	struct sx1301_priv *priv;
-	struct spi_sx1301 *radio;
 	struct gpio_desc *rst;
 	int ret;
 	int i;
@@ -890,9 +687,8 @@ static int sx1301_probe(struct spi_device *spi)
 
 	priv = netdev_priv(netdev);
 	priv->rst_gpio = rst;
-	priv->cur_page = 0xff;
 
-	spi_set_drvdata(spi, netdev);
+	spi_set_drvdata(spi, priv);
 	SET_NETDEV_DEV(netdev, &spi->dev);
 	priv->dev = &spi->dev;
 	priv->spi = spi;
@@ -964,49 +760,10 @@ static int sx1301_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	/* radio A */
-
-	priv->radio_a_ctrl = spi_alloc_master(&spi->dev, sizeof(*radio));
-	if (!priv->radio_a_ctrl) {
-		return -ENOMEM;
-	}
-
-	sx1301_radio_setup(priv->radio_a_ctrl);
-	priv->radio_a_ctrl->dev.of_node = of_get_child_by_name(spi->dev.of_node, "radio-a");
-
-	radio = spi_controller_get_devdata(priv->radio_a_ctrl);
-	radio->page = 2;
-	radio->regs = REG_2_SPI_RADIO_A_DATA;
-	radio->parent = spi;
-
-	ret = devm_spi_register_controller(&spi->dev, priv->radio_a_ctrl);
-	if (ret) {
-		dev_err(&spi->dev, "radio A SPI register failed\n");
-		spi_controller_put(priv->radio_a_ctrl);
+	/* probe platform */
+	ret = devm_of_platform_populate(priv->dev);
+	if (ret)
 		return ret;
-	}
-
-	/* radio B */
-
-	priv->radio_b_ctrl = spi_alloc_master(&spi->dev, sizeof(*radio));
-	if (!priv->radio_b_ctrl) {
-		return -ENOMEM;
-	}
-
-	sx1301_radio_setup(priv->radio_b_ctrl);
-	priv->radio_b_ctrl->dev.of_node = of_get_child_by_name(spi->dev.of_node, "radio-b");
-
-	radio = spi_controller_get_devdata(priv->radio_b_ctrl);
-	radio->page = 2;
-	radio->regs = REG_2_SPI_RADIO_B_DATA;
-	radio->parent = spi;
-
-	ret = devm_spi_register_controller(&spi->dev, priv->radio_b_ctrl);
-	if (ret) {
-		dev_err(&spi->dev, "radio B SPI register failed\n");
-		spi_controller_put(priv->radio_b_ctrl);
-		return ret;
-	}
 
 	/* GPIO */
 	ret = regmap_write(priv->regmap, SX1301_GPMODE, 0x1F);
