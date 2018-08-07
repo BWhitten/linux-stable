@@ -10,6 +10,7 @@
 
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
+#include <linux/gpio/driver.h>
 #include <linux/netdevice.h>
 #include <linux/serdev.h>
 
@@ -18,6 +19,9 @@ struct widora_device {
 	struct net_device *netdev;
 
 	struct gpio_desc *rst;
+#ifdef CONFIG_GPIOLIB
+	struct gpio_chip gpio;
+#endif
 
 	char rx_buf[4096];
 	int rx_len;
@@ -32,7 +36,5 @@ int widora_do_reset(struct widora_device *widev, unsigned long timeout);
 int widora_get_version(struct widora_device *widev, char **version, unsigned long timeout);
 
 int widora_set_gpio(struct widora_device *widev, char bank, char pin, bool enabled, unsigned long timeout);
-int widora_set_gpio_pb0(struct widora_device *widev, bool enabled, unsigned long timeout);
-int widora_set_gpio_pd0(struct widora_device *widev, bool enabled, unsigned long timeout);
 
 #endif /* LORA_TING01M_H */

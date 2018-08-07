@@ -108,13 +108,3 @@ int widora_set_gpio(struct widora_device *widev, char bank, char pin, bool enabl
 
 	return widora_simple_cmd(widev, cmd, timeout);
 }
-
-int widora_set_gpio_pb0(struct widora_device *widev, bool enabled, unsigned long timeout)
-{
-	return widora_set_gpio(widev, 'B', '0', enabled, timeout);
-}
-
-int widora_set_gpio_pd0(struct widora_device *widev, bool enabled, unsigned long timeout)
-{
-	return widora_set_gpio(widev, 'D', '0', enabled, timeout);
-}

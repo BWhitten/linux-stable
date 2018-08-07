@@ -8,6 +8,7 @@
 
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
+#include <linux/gpio/driver.h>
 #include <linux/lora.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -29,6 +30,19 @@ static void widora_reset_mcu(struct widora_device *widev)
 	gpiod_set_value_cansleep(widev->rst, 1);
 	msleep(500);
 }
+
+#ifdef CONFIG_GPIOLIB
+static void ting01m_gpio_set(struct gpio_chip *chip, unsigned int offset, int val)
+{
+	struct widora_device *widev = gpiochip_get_data(chip);
+	static const char * const gpio_names[] = { "B0", "D0" };
+
+	if (offset >= ARRAY_SIZE(gpio_names))
+		return;
+
+	widora_set_gpio(widev, gpio_names[offset][0], gpio_names[offset][1], val != 0, HZ);
+}
+#endif
 
 static u32 ting01m_get_freq(struct net_device *netdev)
 {
@@ -170,18 +184,6 @@ static int widora_probe(struct serdev_device *sdev)
 	dev_info(&sdev->dev, "firmware version: %s\n", sz);
 	kfree(sz);
 
-	ret = widora_set_gpio_pb0(widev, true, HZ);
-	if (ret) {
-		dev_err(&sdev->dev, "Failed to set GPIO PB0 (%d)\n", ret);
-		goto err_gpio;
-	}
-
-	ret = widora_set_gpio_pd0(widev, true, HZ);
-	if (ret) {
-		dev_err(&sdev->dev, "Failed to set GPIO PD0 (%d)\n", ret);
-		goto err_gpio;
-	}
-
 	widev->netdev = alloc_loradev(sizeof(struct ting01m_priv));
 	if (!widev->netdev) {
 		ret = -ENOMEM;
@@ -195,6 +197,19 @@ static int widora_probe(struct serdev_device *sdev)
 	priv->lora.get_freq = ting01m_get_freq;
 	priv->freq = 433000000;
 
+#ifdef CONFIG_GPIOLIB
+	widev->gpio.owner = THIS_MODULE;
+	widev->gpio.parent = &sdev->dev;
+	widev->gpio.label = dev_name(&sdev->dev);
+	widev->gpio.set = ting01m_gpio_set;
+	widev->gpio.base = -1;
+	widev->gpio.ngpio = 2;
+	widev->gpio.can_sleep = 1;
+	ret = gpiochip_add_data(&widev->gpio, widev);
+	if (ret)
+		goto err_gpiochip_add;
+#endif
+
 	ret = register_loradev(widev->netdev);
 	if (ret)
 		goto err_register_loradev;
@@ -204,9 +219,12 @@ static int widora_probe(struct serdev_device *sdev)
 	return 0;
 
 err_register_loradev:
+#ifdef CONFIG_GPIOLIB
+	gpiochip_remove(&widev->gpio);
+err_gpiochip_add:
+#endif
 	free_loradev(widev->netdev);
 err_alloc_loradev:
-err_gpio:
 err_version:
 err_reset:
 	serdev_device_close(sdev);
@@ -220,6 +238,9 @@ static void widora_remove(struct serdev_device *sdev)
 	struct widora_device *widev = serdev_device_get_drvdata(sdev);
 
 	unregister_loradev(widev->netdev);
+#ifdef CONFIG_GPIOLIB
+	gpiochip_remove(&widev->gpio);
+#endif
 	free_loradev(widev->netdev);
 
 	serdev_device_close(sdev);
