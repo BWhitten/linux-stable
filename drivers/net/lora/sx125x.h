@@ -32,4 +32,7 @@
 
 #define SX125X_MAX_REGISTER	0x1A
 
+int sx125x_core_probe(struct device *dev, struct regmap *regmap);
+int sx125x_core_remove(struct device *dev);
+
 #endif
