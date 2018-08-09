@@ -35,6 +35,7 @@ config LORA_SX1257
 	tristate "Semtech SX125x SPI driver"
 	default y
 	depends on SPI
+	select REGMAP_SPI
 	help
 	  Semtech SX1255/1257
 
