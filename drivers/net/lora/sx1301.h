@@ -66,7 +66,6 @@ struct sx1301_priv {
 	struct device		*dev;
 	struct spi_device	*spi;
 	struct gpio_desc *rst_gpio;
-	struct spi_controller *radio_a_ctrl, *radio_b_ctrl;
 	struct regmap		*regmap;
 };
 
