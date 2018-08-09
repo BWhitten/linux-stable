@@ -3,10 +3,16 @@
  * Semtech SX1301 LoRa concentrator
  *
  * Copyright (c) 2018   Ben Whitten
+ * Copyright (c) 2018 Andreas Färber
  */
 
 #ifndef _SX1301_
 #define _SX1301_
+
+#include <linux/regmap.h>
+#include <linux/gpio/consumer.h>
+#include <linux/lora/dev.h>
+#include <linux/spi/spi.h>
 
 #define SX1301_CHIP_VERSION 103
 
@@ -54,5 +60,21 @@
 #define SX1301_EMERGENCY_FORCE_HOST_CTRL (SX1301_PAGE_BASE(3) + 0x7F)
 
 #define SX1301_MAX_REGISTER         (SX1301_PAGE_BASE(3) + 0x7F)
+
+struct sx1301_priv {
+	struct lora_dev_priv lora;
+	struct device		*dev;
+	struct spi_device	*spi;
+	struct gpio_desc *rst_gpio;
+	struct spi_controller *radio_a_ctrl, *radio_b_ctrl;
+	struct regmap		*regmap;
+};
+
+int __init sx130x_radio_init(void);
+void __exit sx130x_radio_exit(void);
+int sx130x_register_radio_devices(struct device *dev);
+int devm_sx130x_register_radio_devices(struct device *dev);
+void sx130x_unregister_radio_devices(struct device *dev);
+bool sx130x_radio_devices_okay(struct device *dev);
 
 #endif
