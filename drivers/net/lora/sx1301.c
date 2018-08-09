@@ -79,15 +79,6 @@ struct spi_sx1301 {
 	unsigned int regs;
 };
 
-struct sx1301_priv {
-	struct lora_dev_priv lora;
-	struct device		*dev;
-	struct spi_device	*spi;
-	struct gpio_desc *rst_gpio;
-	struct spi_controller *radio_a_ctrl, *radio_b_ctrl;
-	struct regmap		*regmap;
-};
-
 static int sx1301_read_burst(struct sx1301_priv *priv, u8 reg, u8 *val, size_t len)
 {
 	u8 addr = reg & 0x7f;
@@ -674,6 +665,7 @@ static int sx1301_probe(struct spi_device *spi)
 		return -ENOMEM;
 
 	netdev->netdev_ops = &sx130x_net_device_ops;
+	SET_NETDEV_DEV(netdev, &spi->dev);
 
 	priv = netdev_priv(netdev);
 	priv->rst_gpio = rst;
@@ -681,7 +673,6 @@ static int sx1301_probe(struct spi_device *spi)
 	spi_set_drvdata(spi, netdev);
 	priv->dev = &spi->dev;
 	priv->spi = spi;
-	SET_NETDEV_DEV(netdev, &spi->dev);
 
 	priv->regmap = devm_regmap_init_spi(spi, &sx1301_regmap_config);
 	if (IS_ERR(priv->regmap)) {
@@ -890,7 +881,7 @@ static const struct of_device_id sx1301_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, sx1301_dt_ids);
 #endif
 
-static struct spi_driver sx1301_spi_driver = {
+static struct spi_driver sx130x_spi_driver = {
 	.driver = {
 		.name = "sx1301",
 		.of_match_table = of_match_ptr(sx1301_dt_ids),
@@ -899,7 +890,24 @@ static struct spi_driver sx1301_spi_driver = {
 	.remove = sx1301_remove,
 };
 
-module_spi_driver(sx1301_spi_driver);
+static int __init sx130x_init(void)
+{
+	int ret;
+
+	ret = sx130x_radio_init();
+	if (ret)
+		return ret;
+
+	return spi_register_driver(&sx130x_spi_driver);
+}
+module_init(sx130x_init);
+
+static void __exit sx130x_exit(void)
+{
+	spi_unregister_driver(&sx130x_spi_driver);
+	sx130x_radio_exit();
+}
+module_exit(sx130x_exit);
 
 MODULE_DESCRIPTION("SX1301 SPI driver");
 MODULE_AUTHOR("Andreas Färber <afaerber@suse.de>");
