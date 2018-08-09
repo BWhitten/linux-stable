@@ -18,13 +18,13 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
+#include <linux/regmap.h>
 #include <linux/lora/dev.h>
 #include <linux/spi/spi.h>
 
 #include "sx1301.h"
 
 #define REG_PAGE_RESET			0
-#define REG_VERSION			1
 #define REG_MCU_PROM_ADDR		9
 #define REG_MCU_PROM_DATA		10
 #define REG_GPIO_SELECT_INPUT		27
@@ -68,6 +68,35 @@
 
 #define REG_EMERGENCY_FORCE_HOST_CTRL	BIT(0)
 
+static const struct regmap_range_cfg sx1301_regmap_ranges[] = {
+	{
+		.name = "Pages",
+
+		.range_min = SX1301_VIRT_BASE,
+		.range_max = SX1301_MAX_REGISTER,
+
+		.selector_reg = SX1301_PAGE,
+		.selector_mask = 0x3,
+
+		.window_start = 0,
+		.window_len = SX1301_PAGE_LEN,
+	},
+};
+
+static struct regmap_config sx1301_regmap_config = {
+	.reg_bits = 8,
+	.val_bits = 8,
+
+	.cache_type = REGCACHE_NONE,
+
+	.read_flag_mask = 0,
+	.write_flag_mask = BIT(7),
+
+	.ranges = sx1301_regmap_ranges,
+	.num_ranges = ARRAY_SIZE(sx1301_regmap_ranges),
+	.max_register = SX1301_MAX_REGISTER,
+};
+
 struct spi_sx1301 {
 	struct spi_device *parent;
 	u8 page;
@@ -81,6 +110,7 @@ struct sx1301_priv {
 	struct gpio_desc *rst_gpio;
 	u8 cur_page;
 	struct spi_controller *radio_a_ctrl, *radio_b_ctrl;
+	struct regmap		*regmap;
 };
 
 static int sx1301_read_burst(struct sx1301_priv *priv, u8 reg, u8 *val, size_t len)
@@ -616,6 +646,7 @@ static int sx1301_probe(struct spi_device *spi)
 	struct spi_sx1301 *radio;
 	struct gpio_desc *rst;
 	int ret;
+	unsigned int ver;
 	u8 val;
 
 	rst = devm_gpiod_get_optional(&spi->dev, "reset", GPIOD_OUT_LOW);
@@ -643,14 +674,21 @@ static int sx1301_probe(struct spi_device *spi)
 	priv->spi = spi;
 	SET_NETDEV_DEV(netdev, &spi->dev);
 
-	ret = sx1301_read(priv, REG_VERSION, &val);
+	priv->regmap = devm_regmap_init_spi(spi, &sx1301_regmap_config);
+	if (IS_ERR(priv->regmap)) {
+		ret = PTR_ERR(priv->regmap);
+		dev_err(&spi->dev, "Regmap allocation failed: %d\n", ret);
+		return ret;
+	}
+
+	ret = regmap_read(priv->regmap, SX1301_VER, &ver);
 	if (ret) {
 		dev_err(&spi->dev, "version read failed\n");
 		return ret;
 	}
 
-	if (val != SX1301_CHIP_VERSION) {
-		dev_err(&spi->dev, "unexpected version: %u\n", val);
+	if (ver != SX1301_CHIP_VERSION) {
+		dev_err(&spi->dev, "unexpected version: %u\n", ver);
 		return -ENXIO;
 	}
 
