@@ -289,13 +289,13 @@ static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr, u8 *val)
 	return 0;
 }
 
-static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const u8 *data, size_t len)
+static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct firmware *fw)
 {
 	u8 *buf;
 	u8 val, rst, select_mux;
 	int ret;
 
-	if (len > 8192)
+	if (fw->size > 8192)
 		return -EINVAL;
 
 	switch (mcu) {
@@ -332,7 +332,7 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const u8 *dat
 		return ret;
 	}
 
-	ret = sx1301_write_burst(priv, REG_MCU_PROM_DATA, data, len);
+	ret = sx1301_write_burst(priv, REG_MCU_PROM_DATA, fw->data, fw->size);
 	if (ret) {
 		dev_err(priv->dev, "MCU prom data write failed\n");
 		return ret;
@@ -344,18 +344,18 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const u8 *dat
 		return ret;
 	}
 
-	buf = kzalloc(len, GFP_KERNEL);
+	buf = kzalloc(fw->size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	ret = sx1301_read_burst(priv, REG_MCU_PROM_DATA, buf, len);
+	ret = sx1301_read_burst(priv, REG_MCU_PROM_DATA, buf, fw->size);
 	if (ret) {
 		dev_err(priv->dev, "MCU prom data read failed\n");
 		kfree(buf);
 		return ret;
 	}
 
-	if (memcmp(data, buf, len)) {
+	if (memcmp(fw->data, buf, fw->size)) {
 		dev_err(priv->dev, "MCU prom data read does not match data written\n");
 		kfree(buf);
 		return -ENXIO;
@@ -397,7 +397,7 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return -EINVAL;
 	}
 
-	ret = sx1301_load_firmware(priv, 1, fw->data, fw->size);
+	ret = sx1301_load_firmware(priv, 1, fw);
 	release_firmware(fw);
 	if (ret) {
 		dev_err(priv->dev, "agc cal firmware load failed\n");
@@ -525,7 +525,7 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return -EINVAL;
 	}
 
-	ret = sx1301_load_firmware(priv, 0, fw->data, fw->size);
+	ret = sx1301_load_firmware(priv, 0, fw);
 	release_firmware(fw);
 	if (ret)
 		return ret;
@@ -542,7 +542,7 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return -EINVAL;
 	}
 
-	ret = sx1301_load_firmware(priv, 1, fw->data, fw->size);
+	ret = sx1301_load_firmware(priv, 1, fw);
 	release_firmware(fw);
 	if (ret)
 		return ret;
