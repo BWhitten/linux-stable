@@ -21,6 +21,8 @@
 #include <linux/lora/dev.h>
 #include <linux/spi/spi.h>
 
+#include "sx1301.h"
+
 #define REG_PAGE_RESET			0
 #define REG_VERSION			1
 #define REG_MCU_PROM_ADDR		9
@@ -295,7 +297,7 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct 
 	u8 val, rst, select_mux;
 	int ret;
 
-	if (fw->size != 8192) {
+	if (fw->size != SX1301_MCU_FW_BYTE) {
 		dev_err(priv->dev, "Unexpected firmware size\n");
 		return -EINVAL;
 	}
@@ -447,8 +449,9 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 
 	dev_info(priv->dev, "AGC calibration firmware version %u\n", (unsigned)val);
 
-	if (val != 2) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n", 2);
+	if (val != SX1301_MCU_AGC_CAL_FW_VERSION) {
+		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
+				SX1301_MCU_AGC_CAL_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -574,8 +577,9 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 
 	dev_info(priv->dev, "AGC firmware version %u\n", (unsigned)val);
 
-	if (val != 4) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n", 4);
+	if (val != SX1301_MCU_AGC_FW_VERSION) {
+		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
+				SX1301_MCU_AGC_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -587,8 +591,9 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 
 	dev_info(priv->dev, "ARB firmware version %u\n", (unsigned)val);
 
-	if (val != 1) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n", 1);
+	if (val != SX1301_MCU_ARB_FW_VERSION) {
+		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
+				SX1301_MCU_ARB_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -644,7 +649,7 @@ static int sx1301_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	if (val != 103) {
+	if (val != SX1301_CHIP_VERSION) {
 		dev_err(&spi->dev, "unexpected version: %u\n", val);
 		return -ENXIO;
 	}
