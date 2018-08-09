@@ -49,6 +49,7 @@ config LORA_SX1301
 	tristate "Semtech SX1301 SPI driver"
 	default y
 	depends on SPI
+	select REGMAP_SPI
 	help
 	  Semtech SX1301
 
