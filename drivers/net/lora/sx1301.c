@@ -295,8 +295,10 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct 
 	u8 val, rst, select_mux;
 	int ret;
 
-	if (fw->size > 8192)
+	if (fw->size != 8192) {
+		dev_err(priv->dev, "Unexpected firmware size\n");
 		return -EINVAL;
+	}
 
 	switch (mcu) {
 	case 0:
@@ -390,11 +392,6 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 	if (ret) {
 		dev_err(priv->dev, "agc cal firmware file load failed\n");
 		return ret;
-	}
-
-	if (fw->size != 8192) {
-		dev_err(priv->dev, "unexpected agc cal firmware size\n");
-		return -EINVAL;
 	}
 
 	ret = sx1301_load_firmware(priv, 1, fw);
@@ -519,12 +516,6 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	if (fw->size != 8192) {
-		dev_err(priv->dev, "unexpected arb firmware size\n");
-		release_firmware(fw);
-		return -EINVAL;
-	}
-
 	ret = sx1301_load_firmware(priv, 0, fw);
 	release_firmware(fw);
 	if (ret)
@@ -534,12 +525,6 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 	if (ret) {
 		dev_err(priv->dev, "agc firmware file load failed\n");
 		return ret;
-	}
-
-	if (fw->size != 8192) {
-		dev_err(priv->dev, "unexpected agc firmware size\n");
-		release_firmware(fw);
-		return -EINVAL;
 	}
 
 	ret = sx1301_load_firmware(priv, 1, fw);
