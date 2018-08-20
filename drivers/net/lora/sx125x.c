@@ -25,11 +25,25 @@
 
 #include "sx125x.h"
 
-#define REG_CLK_SELECT_TX_DAC_CLK_SELECT_CLK_IN	BIT(0)
-#define REG_CLK_SELECT_CLK_OUT			BIT(1)
+enum sx125x_fields {
+	F_CLK_OUT,
+	F_TX_DAC_CLK_SEL,
+	F_SX1257_XOSC_GM_STARTUP,
+	F_SX1257_XOSC_DISABLE_CORE,
+};
+
+static const struct reg_field sx125x_regmap_fields[] = {
+	/* CLK_SELECT */
+	[F_CLK_OUT]        = REG_FIELD(SX125X_CLK_SELECT, 1, 1),
+	[F_TX_DAC_CLK_SEL] = REG_FIELD(SX125X_CLK_SELECT, 0, 0),
+	/* XOSC */ /* TODO maybe make this dynamic */
+	[F_SX1257_XOSC_GM_STARTUP]  = REG_FIELD(SX1257_XOSC, 0, 3),
+	[F_SX1257_XOSC_DISABLE_CORE]  = REG_FIELD(SX1257_XOSC, 5, 5),
+};
 
 struct sx125x_priv {
 	struct regmap		*regmap;
+	struct regmap_field *regmap_fields[ARRAY_SIZE(sx125x_regmap_fields)];
 };
 
 static struct regmap_config __maybe_unused sx125x_regmap_config = {
@@ -44,11 +58,18 @@ static struct regmap_config __maybe_unused sx125x_regmap_config = {
 	.max_register = SX125X_MAX_REGISTER,
 };
 
+static int sx125x_field_write(struct sx125x_priv *priv,
+			      enum sx125x_fields field_id, u8 val)
+{
+	return regmap_field_write(priv->regmap_fields[field_id], val);
+}
+
 static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap *regmap, unsigned int radio)
 {
 	struct sx125x_priv *priv;
 	unsigned int val;
 	int ret;
+	int i;
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -56,6 +77,18 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 
 	dev_set_drvdata(dev, priv);
 	priv->regmap = regmap;
+	for (i = 0; i < ARRAY_SIZE(sx125x_regmap_fields); i++) {
+		const struct reg_field *reg_fields = sx125x_regmap_fields;
+
+		priv->regmap_fields[i] = devm_regmap_field_alloc(dev,
+								 priv->regmap,
+								 reg_fields[i]);
+		if (IS_ERR(priv->regmap_fields[i])) {
+			ret = PTR_ERR(priv->regmap_fields[i]);
+			dev_err(dev, "Cannot allocate regmap field: %d\n", ret);
+			return ret;
+		}
+	}
 
 	if (true) {
 		ret = regmap_read(priv->regmap, SX1255_VERSION, &val);
@@ -66,24 +99,34 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 		dev_info(dev, "SX125x version: %02x\n", val);
 	}
 
-	val = REG_CLK_SELECT_TX_DAC_CLK_SELECT_CLK_IN;
 	if (radio == 1) { /* HACK */
-		val |= REG_CLK_SELECT_CLK_OUT;
+		ret = sx125x_field_write(priv, F_CLK_OUT, 1);
+		if (ret) {
+			dev_err(dev, "enabling clock output failed\n");
+			return ret;
+		}
+
 		dev_info(dev, "enabling clock output\n");
 	}
 
-	ret = regmap_write(priv->regmap, SX125X_CLK_SELECT, val);
+	ret = sx125x_field_write(priv, F_TX_DAC_CLK_SEL, 1);
 	if (ret) {
-		dev_err(dev, "clk write failed\n");
+		dev_err(dev, "clock select failed\n");
 		return ret;
 	}
 
 	dev_dbg(dev, "clk written\n");
 
 	if (true) {
-		ret = regmap_write(priv->regmap, SX1257_XOSC, 13 + 2 * 16);
+		ret = sx125x_field_write(priv, F_SX1257_XOSC_DISABLE_CORE, 1);
 		if (ret) {
-			dev_err(dev, "xosc write failed\n");
+			dev_err(dev, "xosc disable failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_SX1257_XOSC_GM_STARTUP, 13);
+		if (ret) {
+			dev_err(dev, "xosc startup adjust failed\n");
 			return ret;
 		}
 	}
