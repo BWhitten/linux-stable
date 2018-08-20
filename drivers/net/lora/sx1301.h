@@ -59,11 +59,57 @@
 
 #define SX1301_MAX_REGISTER         (SX1301_PAGE_BASE(3) + 0x7F)
 
+enum sx1301_fields {
+	F_SOFT_RESET,
+	F_GLOBAL_EN,
+	F_CLK32M_EN,
+	F_RADIO_A_EN,
+	F_RADIO_B_EN,
+	F_RADIO_RST,
+
+	F_MCU_RST_0,
+	F_MCU_RST_1,
+	F_MCU_SELECT_MUX_0,
+	F_MCU_SELECT_MUX_1,
+
+	F_FORCE_HOST_RADIO_CTRL,
+	F_FORCE_HOST_FE_CTRL,
+	F_FORCE_DEC_FILTER_GAIN,
+
+	F_EMERGENCY_FORCE_HOST_CTRL,
+};
+
+static const struct reg_field sx1301_regmap_fields[] = {
+	/* PAGE */
+	[F_SOFT_RESET]          = REG_FIELD(SX1301_PAGE, 7, 7),
+	/* GEN */
+	[F_GLOBAL_EN]           = REG_FIELD(SX1301_GEN,  3, 3),
+	/* CKEN */
+	[F_CLK32M_EN]           = REG_FIELD(SX1301_CKEN, 0, 0),
+	/* RADIO_CFG */
+	[F_RADIO_A_EN]          = REG_FIELD(SX1301_RADIO_CFG, 0, 0),
+	[F_RADIO_B_EN]          = REG_FIELD(SX1301_RADIO_CFG, 1, 1),
+	[F_RADIO_RST]           = REG_FIELD(SX1301_RADIO_CFG, 2, 2),
+	/* MCU_CTRL */
+	[F_MCU_RST_0]           = REG_FIELD(SX1301_MCU_CTRL, 0, 0),
+	[F_MCU_RST_1]           = REG_FIELD(SX1301_MCU_CTRL, 1, 1),
+	[F_MCU_SELECT_MUX_0]    = REG_FIELD(SX1301_MCU_CTRL, 2, 2),
+	[F_MCU_SELECT_MUX_1]    = REG_FIELD(SX1301_MCU_CTRL, 3, 3),
+	/* FORCE_CTRL */
+	[F_FORCE_HOST_RADIO_CTRL] = REG_FIELD(SX1301_FORCE_CTRL, 1, 1),
+	[F_FORCE_HOST_FE_CTRL]    = REG_FIELD(SX1301_FORCE_CTRL, 2, 2),
+	[F_FORCE_DEC_FILTER_GAIN] = REG_FIELD(SX1301_FORCE_CTRL, 3, 3),
+	/* EMERGENCY_FORCE_HOST_CTRL */
+	[F_EMERGENCY_FORCE_HOST_CTRL] =
+		REG_FIELD(SX1301_EMERGENCY_FORCE_HOST_CTRL, 0, 0),
+};
+
 struct sx1301_priv {
 	struct lora_dev_priv lora;
 	struct device		*dev;
 	struct gpio_desc *rst_gpio;
 	struct regmap		*regmap;
+	struct regmap_field *regmap_fields[ARRAY_SIZE(sx1301_regmap_fields)];
 };
 
 int __init sx130x_radio_init(void);

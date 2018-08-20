@@ -23,27 +23,6 @@
 
 #include "sx1301.h"
 
-#define REG_PAGE_RESET_SOFT_RESET	BIT(7)
-
-#define REG_16_GLOBAL_EN		BIT(3)
-
-#define REG_17_CLK32M_EN		BIT(0)
-
-#define REG_0_105_FORCE_HOST_RADIO_CTRL		BIT(1)
-#define REG_0_105_FORCE_HOST_FE_CTRL		BIT(2)
-#define REG_0_105_FORCE_DEC_FILTER_GAIN		BIT(3)
-
-#define REG_0_MCU_RST_0			BIT(0)
-#define REG_0_MCU_RST_1			BIT(1)
-#define REG_0_MCU_SELECT_MUX_0		BIT(2)
-#define REG_0_MCU_SELECT_MUX_1		BIT(3)
-
-#define REG_2_43_RADIO_A_EN		BIT(0)
-#define REG_2_43_RADIO_B_EN		BIT(1)
-#define REG_2_43_RADIO_RST		BIT(2)
-
-#define REG_EMERGENCY_FORCE_HOST_CTRL	BIT(0)
-
 static const struct regmap_range_cfg sx1301_regmap_ranges[] = {
 	{
 		.name = "Pages",
@@ -73,10 +52,10 @@ static struct regmap_config sx1301_regmap_config = {
 	.max_register = SX1301_MAX_REGISTER,
 };
 
-static int sx1301_soft_reset(struct sx1301_priv *priv)
+static int sx1301_field_write(struct sx1301_priv *priv,
+			      enum sx1301_fields field_id, u8 val)
 {
-	return regmap_write(priv->regmap, SX1301_PAGE,
-			    REG_PAGE_RESET_SOFT_RESET);
+	return regmap_field_write(priv->regmap_fields[field_id], val);
 }
 
 static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr,
@@ -123,7 +102,7 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu,
 				const struct firmware *fw)
 {
 	u8 *buf;
-	u8 rst, select_mux;
+	enum sx1301_fields rst, select_mux;
 	unsigned int val;
 	int ret;
 
@@ -134,29 +113,26 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu,
 
 	switch (mcu) {
 	case 0:
-		rst = REG_0_MCU_RST_0;
-		select_mux = REG_0_MCU_SELECT_MUX_0;
+		rst = F_MCU_RST_0;
+		select_mux = F_MCU_SELECT_MUX_0;
 		break;
 	case 1:
-		rst = REG_0_MCU_RST_1;
-		select_mux = REG_0_MCU_SELECT_MUX_1;
+		rst = F_MCU_RST_1;
+		select_mux = F_MCU_SELECT_MUX_1;
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	ret = regmap_read(priv->regmap, SX1301_MCU_CTRL, &val);
+	ret = sx1301_field_write(priv, rst, 1);
 	if (ret) {
-		dev_err(priv->dev, "MCU read failed\n");
+		dev_err(priv->dev, "MCU reset failed\n");
 		return ret;
 	}
 
-	val |= rst;
-	val &= ~select_mux;
-
-	ret = regmap_write(priv->regmap, SX1301_MCU_CTRL, val);
+	ret = sx1301_field_write(priv, select_mux, 0);
 	if (ret) {
-		dev_err(priv->dev, "MCU reset / select mux write failed\n");
+		dev_err(priv->dev, "MCU RAM select mux failed\n");
 		return ret;
 	}
 
@@ -198,17 +174,9 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu,
 
 	kfree(buf);
 
-	ret = regmap_read(priv->regmap, SX1301_MCU_CTRL, &val);
+	ret = sx1301_field_write(priv, select_mux, 1);
 	if (ret) {
-		dev_err(priv->dev, "MCU read (1) failed\n");
-		return ret;
-	}
-
-	val |= select_mux;
-
-	ret = regmap_write(priv->regmap, SX1301_MCU_CTRL, val);
-	if (ret) {
-		dev_err(priv->dev, "MCU reset / select mux write (1) failed\n");
+		dev_err(priv->dev, "MCU RAM release mux failed\n");
 		return ret;
 	}
 
@@ -234,17 +202,9 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	ret = regmap_read(priv->regmap, SX1301_FORCE_CTRL, &val);
+	ret = sx1301_field_write(priv, F_FORCE_HOST_RADIO_CTRL, 0);
 	if (ret) {
-		dev_err(priv->dev, "0|105 read failed\n");
-		return ret;
-	}
-
-	val &= ~REG_0_105_FORCE_HOST_RADIO_CTRL;
-
-	ret = regmap_write(priv->regmap, SX1301_FORCE_CTRL, val);
-	if (ret) {
-		dev_err(priv->dev, "0|105 write failed\n");
+		dev_err(priv->dev, "force host control failed\n");
 		return ret;
 	}
 
@@ -258,17 +218,9 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	ret = regmap_read(priv->regmap, SX1301_MCU_CTRL, &val);
+	ret = sx1301_field_write(priv, F_MCU_RST_1, 0);
 	if (ret) {
-		dev_err(priv->dev, "MCU read (0) failed\n");
-		return ret;
-	}
-
-	val &= ~REG_0_MCU_RST_1;
-
-	ret = regmap_write(priv->regmap, SX1301_MCU_CTRL, val);
-	if (ret) {
-		dev_err(priv->dev, "MCU write (0) failed\n");
+		dev_err(priv->dev, "MCU 1 reset failed\n");
 		return ret;
 	}
 
@@ -287,34 +239,18 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return -ENXIO;
 	}
 
-	ret = regmap_read(priv->regmap, SX1301_EMERGENCY_FORCE_HOST_CTRL, &val);
+	ret = sx1301_field_write(priv, F_EMERGENCY_FORCE_HOST_CTRL, 0);
 	if (ret) {
-		dev_err(priv->dev, "emergency force read failed\n");
-		return ret;
-	}
-
-	val &= ~REG_EMERGENCY_FORCE_HOST_CTRL;
-
-	ret = regmap_write(priv->regmap, SX1301_EMERGENCY_FORCE_HOST_CTRL, val);
-	if (ret) {
-		dev_err(priv->dev, "emergency force write failed\n");
+		dev_err(priv->dev, "emergency force failed\n");
 		return ret;
 	}
 
 	dev_err(priv->dev, "starting calibration...\n");
 	msleep(2300);
 
-	ret = regmap_read(priv->regmap, SX1301_EMERGENCY_FORCE_HOST_CTRL, &val);
+	ret = sx1301_field_write(priv, F_EMERGENCY_FORCE_HOST_CTRL, 1);
 	if (ret) {
-		dev_err(priv->dev, "emergency force read (1) failed\n");
-		return ret;
-	}
-
-	val |= REG_EMERGENCY_FORCE_HOST_CTRL;
-
-	ret = regmap_write(priv->regmap, SX1301_EMERGENCY_FORCE_HOST_CTRL, val);
-	if (ret) {
-		dev_err(priv->dev, "emergency force write (1) failed\n");
+		dev_err(priv->dev, "emergency force release failed\n");
 		return ret;
 	}
 
@@ -361,20 +297,15 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 	if (ret)
 		return ret;
 
-	ret = regmap_read(priv->regmap, SX1301_FORCE_CTRL, &val);
-	if (ret) {
-		dev_err(priv->dev, "0|105 read failed\n");
+	ret = sx1301_field_write(priv, F_FORCE_HOST_RADIO_CTRL, 0);
+	if (ret)
 		return ret;
-	}
-
-	val &= ~(REG_0_105_FORCE_HOST_RADIO_CTRL | REG_0_105_FORCE_HOST_FE_CTRL
-		| REG_0_105_FORCE_DEC_FILTER_GAIN);
-
-	ret = regmap_write(priv->regmap, SX1301_FORCE_CTRL, val);
-	if (ret) {
-		dev_err(priv->dev, "0|105 write failed\n");
+	ret = sx1301_field_write(priv, F_FORCE_HOST_FE_CTRL, 0);
+	if (ret)
 		return ret;
-	}
+	ret = sx1301_field_write(priv, F_FORCE_DEC_FILTER_GAIN, 0);
+	if (ret)
+		return ret;
 
 	ret = regmap_write(priv->regmap, SX1301_CHRS, 0);
 	if (ret) {
@@ -382,17 +313,15 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	ret = regmap_read(priv->regmap, SX1301_MCU_CTRL, &val);
+	ret = sx1301_field_write(priv, F_MCU_RST_0, 0);
 	if (ret) {
-		dev_err(priv->dev, "MCU read (0) failed\n");
+		dev_err(priv->dev, "MCU 0 release failed\n");
 		return ret;
 	}
 
-	val &= ~(REG_0_MCU_RST_1 | REG_0_MCU_RST_0);
-
-	ret = regmap_write(priv->regmap, SX1301_MCU_CTRL, val);
+	ret = sx1301_field_write(priv, F_MCU_RST_1, 0);
 	if (ret) {
-		dev_err(priv->dev, "MCU write (0) failed\n");
+		dev_err(priv->dev, "MCU 1 release failed\n");
 		return ret;
 	}
 
@@ -447,7 +376,6 @@ static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb,
 static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx1301_priv *priv = netdev_priv(netdev);
-	unsigned int val;
 	int ret;
 
 	netdev_dbg(netdev, "%s", __func__);
@@ -457,31 +385,15 @@ static int sx130x_loradev_open(struct net_device *netdev)
 		return -ENXIO;
 	}
 
-	ret = regmap_read(priv->regmap, SX1301_GEN, &val);
+	ret = sx1301_field_write(priv, F_GLOBAL_EN, 1);
 	if (ret) {
-		netdev_err(netdev, "16 read (1) failed\n");
+		dev_err(priv->dev, "enable global clocks failed\n");
 		return ret;
 	}
 
-	val |= REG_16_GLOBAL_EN;
-
-	ret = regmap_write(priv->regmap, SX1301_GEN, val);
+	ret = sx1301_field_write(priv, F_CLK32M_EN, 1);
 	if (ret) {
-		netdev_err(netdev, "16 write (1) failed\n");
-		return ret;
-	}
-
-	ret = regmap_read(priv->regmap, SX1301_CKEN, &val);
-	if (ret) {
-		netdev_err(netdev, "17 read (1) failed\n");
-		return ret;
-	}
-
-	val |= REG_17_CLK32M_EN;
-
-	ret = regmap_write(priv->regmap, SX1301_CKEN, val);
-	if (ret) {
-		netdev_err(netdev, "17 write (1) failed\n");
+		dev_err(priv->dev, "enable 32M clock failed\n");
 		return ret;
 	}
 
@@ -528,6 +440,7 @@ static int sx1301_probe(struct spi_device *spi)
 	struct sx1301_priv *priv;
 	struct gpio_desc *rst;
 	int ret;
+	int i;
 	unsigned int ver;
 	unsigned int val;
 
@@ -566,6 +479,20 @@ static int sx1301_probe(struct spi_device *spi)
 		return ret;
 	}
 
+	for (i = 0; i < ARRAY_SIZE(sx1301_regmap_fields); i++) {
+		const struct reg_field *reg_fields = sx1301_regmap_fields;
+
+		priv->regmap_fields[i] = devm_regmap_field_alloc(&spi->dev,
+								 priv->regmap,
+								 reg_fields[i]);
+		if (IS_ERR(priv->regmap_fields[i])) {
+			ret = PTR_ERR(priv->regmap_fields[i]);
+			dev_err(&spi->dev,
+				"Cannot allocate regmap field: %d\n", ret);
+			return ret;
+		}
+	}
+
 	ret = regmap_read(priv->regmap, SX1301_VER, &ver);
 	if (ret) {
 		dev_err(&spi->dev, "version read failed\n");
@@ -583,83 +510,49 @@ static int sx1301_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	ret = sx1301_soft_reset(priv);
+	ret = sx1301_field_write(priv, F_SOFT_RESET, 1);
 	if (ret) {
 		dev_err(&spi->dev, "soft reset failed\n");
 		return ret;
 	}
 
-	ret = regmap_read(priv->regmap, SX1301_GEN, &val);
+	ret = sx1301_field_write(priv, F_GLOBAL_EN, 0);
 	if (ret) {
-		dev_err(&spi->dev, "16 read failed\n");
+		dev_err(&spi->dev, "gate global clocks failed\n");
 		return ret;
 	}
 
-	val &= ~REG_16_GLOBAL_EN;
-
-	ret = regmap_write(priv->regmap, SX1301_GEN, val);
+	ret = sx1301_field_write(priv, F_CLK32M_EN, 0);
 	if (ret) {
-		dev_err(&spi->dev, "16 write failed\n");
+		dev_err(&spi->dev, "gate 32M clock failed\n");
 		return ret;
 	}
 
-	ret = regmap_read(priv->regmap, SX1301_CKEN, &val);
+	ret = sx1301_field_write(priv, F_RADIO_A_EN, 1);
 	if (ret) {
-		dev_err(&spi->dev, "17 read failed\n");
+		dev_err(&spi->dev, "radio a enable failed\n");
 		return ret;
 	}
 
-	val &= ~REG_17_CLK32M_EN;
-
-	ret = regmap_write(priv->regmap, SX1301_CKEN, val);
+	ret = sx1301_field_write(priv, F_RADIO_B_EN, 1);
 	if (ret) {
-		dev_err(&spi->dev, "17 write failed\n");
-		return ret;
-	}
-
-	ret = regmap_read(priv->regmap, SX1301_RADIO_CFG, &val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 read failed\n");
-		return ret;
-	}
-
-	val |= REG_2_43_RADIO_B_EN | REG_2_43_RADIO_A_EN;
-
-	ret = regmap_write(priv->regmap, SX1301_RADIO_CFG, val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 write failed\n");
+		dev_err(&spi->dev, "radio b enable failed\n");
 		return ret;
 	}
 
 	msleep(500);
 
-	ret = regmap_read(priv->regmap, SX1301_RADIO_CFG, &val);
+	ret = sx1301_field_write(priv, F_RADIO_RST, 1);
 	if (ret) {
-		dev_err(&spi->dev, "2|43 read failed\n");
-		return ret;
-	}
-
-	val |= REG_2_43_RADIO_RST;
-
-	ret = regmap_write(priv->regmap, SX1301_RADIO_CFG, val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 write failed\n");
+		dev_err(&spi->dev, "radio asert reset failed\n");
 		return ret;
 	}
 
 	usleep_range(5000, 6000);
 
-	ret = regmap_read(priv->regmap, SX1301_RADIO_CFG, &val);
+	ret = sx1301_field_write(priv, F_RADIO_RST, 0);
 	if (ret) {
-		dev_err(&spi->dev, "2|43 read failed\n");
-		return ret;
-	}
-
-	val &= ~REG_2_43_RADIO_RST;
-
-	ret = regmap_write(priv->regmap, SX1301_RADIO_CFG, val);
-	if (ret) {
-		dev_err(&spi->dev, "2|43 write failed\n");
+		dev_err(&spi->dev, "radio deasert reset failed\n");
 		return ret;
 	}
 
