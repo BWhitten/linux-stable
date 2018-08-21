@@ -8,6 +8,7 @@
 #ifndef _SX1301_
 #define _SX1301_
 
+#include <linux/clk.h>
 #include <linux/regmap.h>
 #include <linux/gpio/consumer.h>
 #include <linux/lora/dev.h>
@@ -107,6 +108,7 @@ static const struct reg_field sx1301_regmap_fields[] = {
 struct sx1301_priv {
 	struct lora_dev_priv lora;
 	struct device		*dev;
+	struct clk		*clk32m;
 	struct gpio_desc *rst_gpio;
 	struct regmap		*regmap;
 	struct regmap_field *regmap_fields[ARRAY_SIZE(sx1301_regmap_fields)];

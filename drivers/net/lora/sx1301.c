@@ -9,6 +9,7 @@
  */
 
 #include <linux/bitops.h>
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/lora.h>
@@ -383,6 +384,18 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	if (!sx130x_radio_devices_okay(priv->dev)) {
 		netdev_err(netdev, "radio devices not yet bound to a driver\n");
 		return -ENXIO;
+	}
+
+	priv->clk32m = devm_clk_get(priv->dev, "clk32m");
+	if (IS_ERR(priv->clk32m)) {
+		dev_err(priv->dev, "failed to get clk32m\n");
+		return PTR_ERR(priv->clk32m);
+	}
+
+	ret = clk_prepare_enable(priv->clk32m);
+	if (ret) {
+		dev_err(priv->dev, "failed to enable clk32m: %d\n", ret);
+		return ret;
 	}
 
 	ret = sx1301_field_write(priv, F_GLOBAL_EN, 1);
