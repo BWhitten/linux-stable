@@ -1331,7 +1331,9 @@ static inline u16 socket_type_to_security_class(int family, int type, int protoc
 			return SECCLASS_MCTP_SOCKET;
 		case PF_LORA:
 			return SECCLASS_LORA_SOCKET;
-#if PF_MAX > 47
+		case PF_LORAWAN:
+			return SECCLASS_LORAWAN_SOCKET;
+#if PF_MAX > 48
 #error New address family defined, please update this function.
 #endif
 		}

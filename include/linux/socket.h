@@ -227,8 +227,9 @@ struct ucred {
 				 * transport protocol
 				 */
 #define AF_LORA		46	/* LoRa sockets			*/
+#define AF_LORAWAN	47	/* LoRaWAN sockets			*/
 
-#define AF_MAX		47	/* For now.. */
+#define AF_MAX		48	/* For now.. */
 
 /* Protocol families, same as address families. */
 #define PF_UNSPEC	AF_UNSPEC
@@ -280,6 +281,7 @@ struct ucred {
 #define PF_XDP		AF_XDP
 #define PF_MCTP		AF_MCTP
 #define PF_LORA		AF_LORA
+#define PF_LORAWAN	AF_LORAWAN
 #define PF_MAX		AF_MAX
 
 /* Maximum queue length specifiable by listen.  */
@@ -366,6 +368,7 @@ struct ucred {
 #define SOL_KCM		281
 #define SOL_TLS		282
 #define SOL_XDP		283
+#define SOL_LORAWAN	284
 
 /* IPX options */
 #define IPX_TYPE	1
