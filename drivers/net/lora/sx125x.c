@@ -57,7 +57,7 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 	dev_set_drvdata(dev, priv);
 	priv->regmap = regmap;
 
-	if (false) {
+	if (true) {
 		ret = regmap_read(priv->regmap, SX1255_VERSION, &val);
 		if (ret) {
 			dev_err(dev, "version read failed\n");
