@@ -540,8 +540,11 @@ static int sx1301_probe(struct spi_device *spi)
 	unsigned int val;
 
 	rst = devm_gpiod_get_optional(&spi->dev, "reset", GPIOD_OUT_LOW);
-	if (IS_ERR(rst))
+	if (IS_ERR(rst)) {
+		if (PTR_ERR(rst) != -EPROBE_DEFER)
+			dev_err(&spi->dev, "Failed to obtain reset GPIO\n");
 		return PTR_ERR(rst);
+	}
 
 	gpiod_set_value_cansleep(rst, 1);
 	msleep(100);
