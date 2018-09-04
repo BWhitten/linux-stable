@@ -13,6 +13,7 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
+#include <linux/regmap.h>
 #include <linux/lora/dev.h>
 #include <linux/spi/spi.h>
 
@@ -51,6 +52,7 @@
 struct sx1276_priv {
 	struct lora_dev_priv lora;
 	struct spi_device *spi;
+	struct regmap *regmap;
 
 	size_t fifosize;
 	int dio_gpio[6];
@@ -66,42 +68,45 @@ struct sx1276_priv {
 	struct dentry *debugfs;
 };
 
-static int sx1276_read_single(struct spi_device *spi, u8 reg, u8 *val)
+static bool sx127x_volatile_reg(struct device *dev, unsigned int reg)
 {
-	u8 addr = reg & 0x7f;
-	return spi_write_then_read(spi, &addr, 1, val, 1);
+	if (reg == REG_FIFO)
+		return true;
+
+	return false;
 }
 
-static int sx1276_write_single(struct spi_device *spi, u8 reg, u8 val)
+static bool sx127x_writeable_noinc_reg(struct device *dev, unsigned int reg)
 {
-	u8 buf[2];
+	if (reg == REG_FIFO)
+		return true;
 
-	buf[0] = reg | BIT(7);
-	buf[1] = val;
-	return spi_write(spi, buf, 2);
+	return false;
 }
 
-static int sx1276_write_burst(struct spi_device *spi, u8 reg, size_t len, void *val)
+static bool sx127x_readable_noinc_reg(struct device *dev, unsigned int reg)
 {
-	u8 buf = reg | BIT(7);
-	struct spi_transfer xfers[2] = {
-		[0] = {
-			.tx_buf = &buf,
-			.len = 1,
-		},
-		[1] = {
-			.tx_buf = val,
-			.len = len,
-		},
-	};
+	if (reg == REG_FIFO)
+		return true;
 
-	return spi_sync_transfer(spi, xfers, 2);
+	return false;
 }
 
-static int sx1276_write_fifo(struct spi_device *spi, size_t len, void *val)
-{
-	return sx1276_write_burst(spi, REG_FIFO, len, val);
-}
+static struct regmap_config sx127x_regmap_config = {
+	.reg_bits = 8,
+	.val_bits = 8,
+
+	.cache_type = REGCACHE_NONE,
+
+	.read_flag_mask = 0,
+	.write_flag_mask = BIT(7),
+
+	.volatile_reg = sx127x_volatile_reg,
+	.writeable_noinc_reg = sx127x_writeable_noinc_reg,
+	.readable_noinc_reg = sx127x_readable_noinc_reg,
+
+	.max_register = 0xff,
+};
 
 static netdev_tx_t sx1276_loradev_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
@@ -129,12 +134,14 @@ static netdev_tx_t sx1276_loradev_start_xmit(struct sk_buff *skb, struct net_dev
 
 static int sx1276_tx(struct spi_device *spi, void *data, int data_len)
 {
-	u8 addr, val;
+	struct net_device *netdev = spi_get_drvdata(spi);
+	struct sx1276_priv *priv = netdev_priv(netdev);
+	unsigned int addr, val;
 	int ret;
 
 	dev_dbg(&spi->dev, "%s\n", __func__);
 
-	ret = sx1276_read_single(spi, REG_OPMODE, &val);
+	ret = regmap_read(priv->regmap, REG_OPMODE, &val);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to read RegOpMode (%d)\n", ret);
 		return ret;
@@ -145,45 +152,45 @@ static int sx1276_tx(struct spi_device *spi, void *data, int data_len)
 	if ((val & REG_OPMODE_MODE_MASK) == REG_OPMODE_MODE_SLEEP)
 		dev_err(&spi->dev, "Cannot access FIFO in Sleep Mode!\n");
 
-	ret = sx1276_read_single(spi, LORA_REG_FIFO_TX_BASE_ADDR, &addr);
+	ret = regmap_read(priv->regmap, LORA_REG_FIFO_TX_BASE_ADDR, &addr);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to read RegFifoTxBaseAddr (%d)\n", ret);
 		return ret;
 	}
 	dev_dbg(&spi->dev, "RegFifoTxBaseAddr = 0x%02x\n", addr);
 
-	ret = sx1276_write_single(spi, LORA_REG_FIFO_ADDR_PTR, addr);
+	ret = regmap_write(priv->regmap, LORA_REG_FIFO_ADDR_PTR, addr);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to write RegFifoAddrPtr (%d)\n", ret);
 		return ret;
 	}
 
-	ret = sx1276_write_single(spi, LORA_REG_PAYLOAD_LENGTH, data_len);
+	ret = regmap_write(priv->regmap, LORA_REG_PAYLOAD_LENGTH, data_len);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to write RegPayloadLength (%d)\n", ret);
 		return ret;
 	}
 
-	ret = sx1276_write_fifo(spi, data_len, data);
+	ret = regmap_noinc_write(priv->regmap, REG_FIFO, data, data_len);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to write into FIFO (%d)\n", ret);
 		return ret;
 	}
 
-	ret = sx1276_read_single(spi, LORA_REG_IRQ_FLAGS, &val);
+	ret = regmap_read(priv->regmap, LORA_REG_IRQ_FLAGS, &val);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to read RegIrqFlags (%d)\n", ret);
 		return ret;
 	}
 	dev_dbg(&spi->dev, "RegIrqFlags = 0x%02x\n", val);
 
-	ret = sx1276_write_single(spi, LORA_REG_IRQ_FLAGS, LORA_REG_IRQ_FLAGS_TX_DONE);
+	ret = regmap_write(priv->regmap, LORA_REG_IRQ_FLAGS, LORA_REG_IRQ_FLAGS_TX_DONE);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to write RegIrqFlags (%d)\n", ret);
 		return ret;
 	}
 
-	ret = sx1276_read_single(spi, LORA_REG_IRQ_FLAGS_MASK, &val);
+	ret = regmap_read(priv->regmap, LORA_REG_IRQ_FLAGS_MASK, &val);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to read RegIrqFlagsMask (%d)\n", ret);
 		return ret;
@@ -191,13 +198,13 @@ static int sx1276_tx(struct spi_device *spi, void *data, int data_len)
 	dev_dbg(&spi->dev, "RegIrqFlagsMask = 0x%02x\n", val);
 
 	val &= ~LORA_REG_IRQ_FLAGS_TX_DONE;
-	ret = sx1276_write_single(spi, LORA_REG_IRQ_FLAGS_MASK, val);
+	ret = regmap_write(priv->regmap, LORA_REG_IRQ_FLAGS_MASK, val);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to write RegIrqFlagsMask (%d)\n", ret);
 		return ret;
 	}
 
-	ret = sx1276_read_single(spi, REG_DIO_MAPPING1, &val);
+	ret = regmap_read(priv->regmap, REG_DIO_MAPPING1, &val);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to read RegDioMapping1 (%d)\n", ret);
 		return ret;
@@ -205,13 +212,13 @@ static int sx1276_tx(struct spi_device *spi, void *data, int data_len)
 
 	val &= ~REG_DIO_MAPPING1_DIO0_MASK;
 	val |= 0x1 << 6;
-	ret = sx1276_write_single(spi, REG_DIO_MAPPING1, val);
+	ret = regmap_write(priv->regmap, REG_DIO_MAPPING1, val);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to write RegDioMapping1 (%d)\n", ret);
 		return ret;
 	}
 
-	ret = sx1276_read_single(spi, REG_OPMODE, &val);
+	ret = regmap_read(priv->regmap, REG_OPMODE, &val);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to read RegOpMode (%d)\n", ret);
 		return ret;
@@ -219,7 +226,7 @@ static int sx1276_tx(struct spi_device *spi, void *data, int data_len)
 
 	val &= ~REG_OPMODE_MODE_MASK;
 	val |= REG_OPMODE_MODE_TX;
-	ret = sx1276_write_single(spi, REG_OPMODE, val);
+	ret = regmap_write(priv->regmap, REG_OPMODE, val);
 	if (ret) {
 		dev_err(&spi->dev, "Failed to write RegOpMode (%d)\n", ret);
 		return ret;
@@ -257,15 +264,14 @@ static irqreturn_t sx1276_dio_interrupt(int irq, void *dev_id)
 {
 	struct net_device *netdev = dev_id;
 	struct sx1276_priv *priv = netdev_priv(netdev);
-	struct spi_device *spi = priv->spi;
-	u8 val;
+	unsigned int val;
 	int ret;
 
 	netdev_dbg(netdev, "%s\n", __func__);
 
 	mutex_lock(&priv->spi_lock);
 
-	ret = sx1276_read_single(spi, LORA_REG_IRQ_FLAGS, &val);
+	ret = regmap_read(priv->regmap, LORA_REG_IRQ_FLAGS, &val);
 	if (ret) {
 		netdev_warn(netdev, "Failed to read RegIrqFlags (%d)\n", ret);
 		val = 0;
@@ -278,7 +284,7 @@ static irqreturn_t sx1276_dio_interrupt(int irq, void *dev_id)
 		priv->tx_len = 0;
 		netif_wake_queue(netdev);
 
-		ret = sx1276_write_single(spi, LORA_REG_IRQ_FLAGS, LORA_REG_IRQ_FLAGS_TX_DONE);
+		ret = regmap_write(priv->regmap, LORA_REG_IRQ_FLAGS, LORA_REG_IRQ_FLAGS_TX_DONE);
 		if (ret)
 			netdev_warn(netdev, "Failed to write RegIrqFlags (%d)\n", ret);
 	}
@@ -291,8 +297,7 @@ static irqreturn_t sx1276_dio_interrupt(int irq, void *dev_id)
 static int sx1276_loradev_open(struct net_device *netdev)
 {
 	struct sx1276_priv *priv = netdev_priv(netdev);
-	struct spi_device *spi = to_spi_device(netdev->dev.parent);
-	u8 val;
+	unsigned int val;
 	int ret, irq;
 
 	netdev_dbg(netdev, "%s\n", __func__);
@@ -303,7 +308,7 @@ static int sx1276_loradev_open(struct net_device *netdev)
 
 	mutex_lock(&priv->spi_lock);
 
-	ret = sx1276_read_single(spi, REG_OPMODE, &val);
+	ret = regmap_read(priv->regmap, REG_OPMODE, &val);
 	if (ret) {
 		netdev_err(netdev, "Failed to read RegOpMode (%d)\n", ret);
 		goto err_opmode;
@@ -311,7 +316,7 @@ static int sx1276_loradev_open(struct net_device *netdev)
 
 	val &= ~REG_OPMODE_MODE_MASK;
 	val |= REG_OPMODE_MODE_STDBY;
-	ret = sx1276_write_single(spi, REG_OPMODE, val);
+	ret = regmap_write(priv->regmap, REG_OPMODE, val);
 	if (ret) {
 		netdev_err(netdev, "Failed to write RegOpMode (%d)\n", ret);
 		goto err_opmode;
@@ -355,8 +360,7 @@ err_opmode:
 static int sx1276_loradev_stop(struct net_device *netdev)
 {
 	struct sx1276_priv *priv = netdev_priv(netdev);
-	struct spi_device *spi = to_spi_device(netdev->dev.parent);
-	u8 val;
+	unsigned int val;
 	int ret, irq;
 
 	netdev_dbg(netdev, "%s\n", __func__);
@@ -365,13 +369,13 @@ static int sx1276_loradev_stop(struct net_device *netdev)
 
 	mutex_lock(&priv->spi_lock);
 
-	ret = sx1276_write_single(spi, LORA_REG_IRQ_FLAGS_MASK, 0xff);
+	ret = regmap_write(priv->regmap, LORA_REG_IRQ_FLAGS_MASK, 0xff);
 	if (ret) {
 		netdev_err(netdev, "Failed to write RegIrqFlagsMask (%d)\n", ret);
 		goto err_irqmask;
 	}
 
-	ret = sx1276_read_single(spi, REG_OPMODE, &val);
+	ret = regmap_read(priv->regmap, REG_OPMODE, &val);
 	if (ret) {
 		netdev_err(netdev, "Failed to read RegOpMode (%d)\n", ret);
 		goto err_opmode;
@@ -379,7 +383,7 @@ static int sx1276_loradev_stop(struct net_device *netdev)
 
 	val &= ~REG_OPMODE_MODE_MASK;
 	val |= REG_OPMODE_MODE_SLEEP;
-	ret = sx1276_write_single(spi, REG_OPMODE, val);
+	ret = regmap_write(priv->regmap, REG_OPMODE, val);
 	if (ret) {
 		netdev_err(netdev, "Failed to write RegOpMode (%d)\n", ret);
 		goto err_opmode;
@@ -428,7 +432,7 @@ static ssize_t sx1276_freq_read(struct file *file, char __user *user_buf,
 	ssize_t size;
 	char *buf;
 	int ret;
-	u8 msb, mid, lsb;
+	unsigned int msb, mid, lsb;
 	u32 freq_xosc;
 	unsigned long long frf;
 
@@ -438,11 +442,11 @@ static ssize_t sx1276_freq_read(struct file *file, char __user *user_buf,
 
 	mutex_lock(&priv->spi_lock);
 
-	ret = sx1276_read_single(spi, REG_FRF_MSB, &msb);
+	ret = regmap_read(priv->regmap, REG_FRF_MSB, &msb);
 	if (!ret)
-		ret = sx1276_read_single(spi, REG_FRF_MID, &mid);
+		ret = regmap_read(priv->regmap, REG_FRF_MID, &mid);
 	if (!ret)
-		ret = sx1276_read_single(spi, REG_FRF_LSB, &lsb);
+		ret = regmap_read(priv->regmap, REG_FRF_LSB, &lsb);
 
 	mutex_unlock(&priv->spi_lock);
 
@@ -474,12 +478,11 @@ static ssize_t sx1276_state_read(struct file *file, char __user *user_buf,
 {
 	struct net_device *netdev = file->private_data;
 	struct sx1276_priv *priv = netdev_priv(netdev);
-	struct spi_device *spi = priv->spi;
 	ssize_t size;
 	char *buf;
 	int len = 0;
 	int ret;
-	u8 val;
+	unsigned int val;
 	bool lora_mode = true;
 	const int max_len = 4096;
 
@@ -489,41 +492,41 @@ static ssize_t sx1276_state_read(struct file *file, char __user *user_buf,
 
 	mutex_lock(&priv->spi_lock);
 
-	ret = sx1276_read_single(spi, REG_OPMODE, &val);
+	ret = regmap_read(priv->regmap, REG_OPMODE, &val);
 	if (!ret) {
 		len += snprintf(buf + len, max_len - len, "RegOpMode = 0x%02x\n", val);
 		lora_mode = (val & REG_OPMODE_LONG_RANGE_MODE) != 0;
 	}
 
-	ret = sx1276_read_single(spi, REG_FRF_MSB, &val);
+	ret = regmap_read(priv->regmap, REG_FRF_MSB, &val);
 	if (!ret)
 		len += snprintf(buf + len, max_len - len, "RegFrMsb = 0x%02x\n", val);
-	ret = sx1276_read_single(spi, REG_FRF_MID, &val);
+	ret = regmap_read(priv->regmap, REG_FRF_MID, &val);
 	if (!ret)
 		len += snprintf(buf + len, max_len - len, "RegFrMid = 0x%02x\n", val);
-	ret = sx1276_read_single(spi, REG_FRF_LSB, &val);
+	ret = regmap_read(priv->regmap, REG_FRF_LSB, &val);
 	if (!ret)
 		len += snprintf(buf + len, max_len - len, "RegFrLsb = 0x%02x\n", val);
 
-	ret = sx1276_read_single(spi, REG_PA_CONFIG, &val);
+	ret = regmap_read(priv->regmap, REG_PA_CONFIG, &val);
 	if (!ret)
 		len += snprintf(buf + len, max_len - len, "RegPaConfig = 0x%02x\n", val);
 
 	if (lora_mode) {
-		ret = sx1276_read_single(spi, LORA_REG_IRQ_FLAGS_MASK, &val);
+		ret = regmap_read(priv->regmap, LORA_REG_IRQ_FLAGS_MASK, &val);
 		if (!ret)
 			len += snprintf(buf + len, max_len - len, "RegIrqFlagsMask = 0x%02x\n", val);
 
-		ret = sx1276_read_single(spi, LORA_REG_IRQ_FLAGS, &val);
+		ret = regmap_read(priv->regmap, LORA_REG_IRQ_FLAGS, &val);
 		if (!ret)
 			len += snprintf(buf + len, max_len - len, "RegIrqFlags = 0x%02x\n", val);
 
-		ret = sx1276_read_single(spi, LORA_REG_SYNC_WORD, &val);
+		ret = regmap_read(priv->regmap, LORA_REG_SYNC_WORD, &val);
 		if (!ret)
 			len += snprintf(buf + len, max_len - len, "RegSyncWord = 0x%02x\n", val);
 	}
 
-	ret = sx1276_read_single(spi, REG_PA_DAC, &val);
+	ret = regmap_read(priv->regmap, REG_PA_DAC, &val);
 	if (!ret)
 		len += snprintf(buf + len, max_len - len, "RegPaDac = 0x%02x\n", val);
 
@@ -548,7 +551,25 @@ static int sx1276_probe(struct spi_device *spi)
 	int rst, dio[6], ret, model, i;
 	u32 freq_xosc, freq_band;
 	unsigned long long freq_rf;
-	u8 val;
+	unsigned int val;
+
+	netdev = devm_alloc_loradev(&spi->dev, sizeof(struct sx1276_priv));
+	if (!netdev)
+		return -ENOMEM;
+
+	netdev->netdev_ops = &sx1276_netdev_ops;
+	netdev->flags |= IFF_ECHO;
+
+	priv = netdev_priv(netdev);
+	priv->spi = spi;
+	mutex_init(&priv->spi_lock);
+
+	priv->regmap = devm_regmap_init_spi(spi, &sx127x_regmap_config);
+	if (IS_ERR(priv->regmap)) {
+		ret = PTR_ERR(priv->regmap);
+		dev_err(&spi->dev, "regmap allocation failed (%d)\n", ret);
+		return ret;
+	}
 
 	rst = of_get_named_gpio(spi->dev.of_node, "reset-gpio", 0);
 	if (rst == -ENOENT)
@@ -575,7 +596,7 @@ static int sx1276_probe(struct spi_device *spi)
 	spi->bits_per_word = 8;
 	spi_setup(spi);
 
-	ret = sx1276_read_single(spi, REG_VERSION, &val);
+	ret = regmap_read(priv->regmap, REG_VERSION, &val);
 	if (ret) {
 		dev_err(&spi->dev, "version read failed");
 		return ret;
@@ -591,7 +612,7 @@ static int sx1276_probe(struct spi_device *spi)
 			msleep(5);
 		}
 
-		ret = sx1276_read_single(spi, REG_VERSION, &val);
+		ret = regmap_read(priv->regmap, REG_VERSION, &val);
 		if (ret) {
 			dev_err(&spi->dev, "version read failed");
 			return ret;
@@ -620,7 +641,7 @@ static int sx1276_probe(struct spi_device *spi)
 	val = REG_OPMODE_LONG_RANGE_MODE | REG_OPMODE_MODE_SLEEP;
 	if (freq_band < 525000000)
 		val |= REG_OPMODE_LOW_FREQUENCY_MODE_ON;
-	ret = sx1276_write_single(spi, REG_OPMODE, val);
+	ret = regmap_write(priv->regmap, REG_OPMODE, val);
 	if (ret) {
 		dev_err(&spi->dev, "failed writing opmode");
 		return ret;
@@ -631,17 +652,17 @@ static int sx1276_probe(struct spi_device *spi)
 	do_div(freq_rf, freq_xosc);
 	dev_dbg(&spi->dev, "Frf = %llu", freq_rf);
 
-	ret = sx1276_write_single(spi, REG_FRF_MSB, freq_rf >> 16);
+	ret = regmap_write(priv->regmap, REG_FRF_MSB, freq_rf >> 16);
 	if (!ret)
-		ret = sx1276_write_single(spi, REG_FRF_MID, freq_rf >> 8);
+		ret = regmap_write(priv->regmap, REG_FRF_MID, freq_rf >> 8);
 	if (!ret)
-		ret = sx1276_write_single(spi, REG_FRF_LSB, freq_rf);
+		ret = regmap_write(priv->regmap, REG_FRF_LSB, freq_rf);
 	if (ret) {
 		dev_err(&spi->dev, "failed writing frequency (%d)", ret);
 		return ret;
 	}
 
-	ret = sx1276_read_single(spi, REG_PA_CONFIG, &val);
+	ret = regmap_read(priv->regmap, REG_PA_CONFIG, &val);
 	if (ret) {
 		dev_err(&spi->dev, "failed reading RegPaConfig\n");
 		return ret;
@@ -650,35 +671,25 @@ static int sx1276_probe(struct spi_device *spi)
 		val |= REG_PA_CONFIG_PA_SELECT;
 	val &= ~GENMASK(3, 0);
 	val |= (23 - 3) - 5;
-	ret = sx1276_write_single(spi, REG_PA_CONFIG, val);
+	ret = regmap_write(priv->regmap, REG_PA_CONFIG, val);
 	if (ret) {
 		dev_err(&spi->dev, "failed writing RegPaConfig\n");
 		return ret;
 	}
 
-	ret = sx1276_read_single(spi, REG_PA_DAC, &val);
+	ret = regmap_read(priv->regmap, REG_PA_DAC, &val);
 	if (ret) {
 		dev_err(&spi->dev, "failed reading RegPaDac\n");
 		return ret;
 	}
 	val &= ~GENMASK(2, 0);
 	val |= 0x7;
-	ret = sx1276_write_single(spi, REG_PA_DAC, val);
+	ret = regmap_write(priv->regmap, REG_PA_DAC, val);
 	if (ret) {
 		dev_err(&spi->dev, "failed writing RegPaDac\n");
 		return ret;
 	}
 
-	netdev = alloc_loradev(sizeof(struct sx1276_priv));
-	if (!netdev)
-		return -ENOMEM;
-
-	netdev->netdev_ops = &sx1276_netdev_ops;
-	netdev->flags |= IFF_ECHO;
-
-	priv = netdev_priv(netdev);
-	priv->spi = spi;
-	mutex_init(&priv->spi_lock);
 	for (i = 0; i < 6; i++)
 		priv->dio_gpio[i] = dio[i];
 
@@ -686,10 +697,8 @@ static int sx1276_probe(struct spi_device *spi)
 	SET_NETDEV_DEV(netdev, &spi->dev);
 
 	ret = register_loradev(netdev);
-	if (ret) {
-		free_loradev(netdev);
+	if (ret)
 		return ret;
-	}
 
 	priv->debugfs = debugfs_create_dir(dev_name(&spi->dev), NULL);
 	debugfs_create_file("state", S_IRUGO, priv->debugfs, netdev, &sx1276_state_fops);
@@ -708,7 +717,6 @@ static int sx1276_remove(struct spi_device *spi)
 	debugfs_remove_recursive(priv->debugfs);
 
 	unregister_loradev(netdev);
-	free_loradev(netdev);
 
 	dev_info(&spi->dev, "SX1276 module removed");
 
