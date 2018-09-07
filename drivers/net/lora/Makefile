@@ -28,6 +28,9 @@ lora-sx125x-y := sx125x.o
 obj-$(CONFIG_LORA_SX1276) += lora-sx1276.o
 lora-sx1276-y := sx1276.o
 
+obj-$(CONFIG_LORA_SX128X) += lora-sx128x.o
+lora-sx128x-y := sx128x.o
+
 obj-$(CONFIG_LORA_SX1301) += lora-sx1301.o
 lora-sx1301-y := sx1301.o
 lora-sx1301-y += sx130x_radio.o
