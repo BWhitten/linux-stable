@@ -11,7 +11,6 @@
 #include <linux/regmap.h>
 #include <linux/gpio/consumer.h>
 #include <linux/lora/dev.h>
-#include <linux/spi/spi.h>
 
 #define SX1301_CHIP_VERSION 103
 
@@ -63,7 +62,6 @@
 struct sx1301_priv {
 	struct lora_dev_priv lora;
 	struct device		*dev;
-	struct spi_device	*spi;
 	struct gpio_desc *rst_gpio;
 	struct regmap		*regmap;
 };

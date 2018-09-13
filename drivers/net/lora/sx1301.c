@@ -73,26 +73,6 @@ static struct regmap_config sx1301_regmap_config = {
 	.max_register = SX1301_MAX_REGISTER,
 };
 
-static int sx1301_read_burst(struct sx1301_priv *priv, u8 reg, u8 *val,
-			     size_t len)
-{
-	u8 addr = reg & 0x7f;
-
-	return spi_write_then_read(priv->spi, &addr, 1, val, len);
-}
-
-static int sx1301_write_burst(struct sx1301_priv *priv, u8 reg, const u8 *val,
-			      size_t len)
-{
-	u8 addr = reg | BIT(7);
-	struct spi_transfer xfr[2] = {
-		{ .tx_buf = &addr, .len = 1 },
-		{ .tx_buf = val, .len = len },
-	};
-
-	return spi_sync_transfer(priv->spi, xfr, 2);
-}
-
 static int sx1301_soft_reset(struct sx1301_priv *priv)
 {
 	return regmap_write(priv->regmap, SX1301_PAGE,
@@ -186,7 +166,7 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu,
 		return ret;
 	}
 
-	ret = sx1301_write_burst(priv, SX1301_MPD, fw->data, fw->size);
+	ret = regmap_noinc_write(priv->regmap, SX1301_MPD, fw->data, fw->size);
 	if (ret) {
 		dev_err(priv->dev, "MCU prom data write failed\n");
 		return ret;
@@ -202,7 +182,7 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu,
 	if (!buf)
 		return -ENOMEM;
 
-	ret = sx1301_read_burst(priv, SX1301_MPD, buf, fw->size);
+	ret = regmap_noinc_read(priv->regmap, SX1301_MPD, buf, fw->size);
 	if (ret) {
 		dev_err(priv->dev, "MCU prom data read failed\n");
 		kfree(buf);
@@ -578,7 +558,6 @@ static int sx1301_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, netdev);
 	priv->dev = &spi->dev;
-	priv->spi = spi;
 
 	priv->regmap = devm_regmap_init_spi(spi, &sx1301_regmap_config);
 	if (IS_ERR(priv->regmap)) {
