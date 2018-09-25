@@ -156,6 +156,8 @@
 					 */
 #define ETH_P_LORA	0x00FB		/* LoRa				*/
 #define ETH_P_LORAWAN	0x00FC		/* LoRaWAN			*/
+#define ETH_P_OOK	0x00FD		/* On/Off Keying modulation	*/
+#define ETH_P_FSK	0x00FE		/* Frequency Shift Keying mod.	*/
 
 /*
  *	This is an Ethernet frame header.
