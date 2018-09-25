@@ -138,7 +138,8 @@ static netdev_tx_t sx128x_loradev_start_xmit(struct sk_buff *skb, struct net_dev
 
 	netdev_dbg(netdev, "%s\n", __func__);
 
-	if (skb->protocol != htons(ETH_P_LORA)) {
+	if (skb->protocol != htons(ETH_P_LORA) &&
+	    skb->protocol != htons(ETH_P_FLRC)) {
 		kfree_skb(skb);
 		netdev->stats.tx_dropped++;
 		return NETDEV_TX_OK;
