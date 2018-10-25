@@ -230,6 +230,22 @@ static int sx1301_field_write(struct sx1301_priv *priv,
 	return regmap_field_write(priv->regmap_fields[field_id], val);
 }
 
+static int sx1301_fields_patch(struct sx1301_priv *priv)
+{
+	int i, ret;
+
+	for (i = 0; i < ARRAY_SIZE(sx1301_regmap_fields_patch); i++) {
+		ret = sx1301_field_write(priv, sx1301_regmap_fields_patch[i]->field,
+				sx1301_regmap_fields_patch[i]->val);
+		if (ret) {
+			dev_err(priv->dev, "Failed to patch regmap field: %d\n", i);
+			break;
+		}
+	}
+
+	return ret;
+}
+
 static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *val)
 {
 	int ret;
@@ -826,6 +842,9 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	if (ret)
 		return ret;
 
+	ret = sx1301_fields_patch(priv);
+	if (ret)
+		return ret;
 	/* TODO Load constant adjustments, patches */
 
 	/* TODO Frequency time drift */
