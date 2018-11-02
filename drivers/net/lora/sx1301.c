@@ -225,7 +225,7 @@ static struct regmap_config sx1301_regmap_config = {
 };
 
 static int sx1301_field_write(struct sx1301_priv *priv,
-		enum sx1301_fields field_id, u8 val)
+			      enum sx1301_fields field_id, u8 val)
 {
 	return regmap_field_write(priv->regmap_fields[field_id], val);
 }
@@ -235,7 +235,10 @@ static int sx1301_fields_patch(struct sx1301_priv *priv)
 	int i, ret;
 
 	for (i = 0; i < ARRAY_SIZE(sx1301_regmap_fields_patch); i++) {
-		ret = sx1301_field_write(priv, sx1301_regmap_fields_patch[i]->field,
+		ret = sx1301_field_write(priv, sx1301_regmap_fields_patch[i].field,
+					 sx1301_regmap_fields_patch[i].val);
+		ret = sx1301_field_write(priv, sx1301_regmap_fields_patch
+[i]->field,
 				sx1301_regmap_fields_patch[i]->val);
 		if (ret) {
 			dev_err(priv->dev, "Failed to patch regmap field: %d\n", i);
@@ -368,7 +371,7 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct 
 }
 
 static int sx1301_agc_transaction(struct sx1301_priv *priv, unsigned int val,
-	unsigned int *status)
+				  unsigned int *status)
 {
 	int ret;
 
@@ -457,11 +460,11 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC calibration firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "AGC calibration firmware version %u\n", val);
 
 	if (val != SX1301_MCU_AGC_CAL_FW_VERSION) {
 		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_AGC_CAL_FW_VERSION);
+			SX1301_MCU_AGC_CAL_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -486,7 +489,7 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC status: %02x\n", (unsigned)val);
+	dev_info(priv->dev, "AGC status: %02x\n", val);
 	if ((val & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
 		dev_err(priv->dev, "AGC calibration failed\n");
 		return -ENXIO;
@@ -557,11 +560,11 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "AGC firmware version %u\n", val);
 
 	if (val != SX1301_MCU_AGC_FW_VERSION) {
 		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_AGC_FW_VERSION);
+			SX1301_MCU_AGC_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -571,11 +574,11 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "ARB firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "ARB firmware version %u\n", val);
 
 	if (val != SX1301_MCU_ARB_FW_VERSION) {
 		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_ARB_FW_VERSION);
+			SX1301_MCU_ARB_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -625,7 +628,7 @@ static int sx1301_load_tx_gain_lut(struct sx1301_priv *priv)
 static int sx1301_tx(struct sx1301_priv *priv, struct lora_frame *frame)
 {
 	int ret, i;
-	u8 buff[256+16];
+	u8 buff[256 + 16];
 	struct sx1301_tx_header *hdr = (struct sx1301_tx_header *)buff;
 
 	/* TODO general checks to make sure we CAN send */
@@ -781,16 +784,16 @@ static void sx1301_tx_work_handler(struct work_struct *ws)
 
 	if (priv->tx_skb) {
 		ret = sx1301_tx(priv, frame);
-		if (ret)
+		if (ret) {
 			netdev->stats.tx_errors++;
-		else {
+		} else {
 			netdev->stats.tx_packets++;
 			netdev->stats.tx_bytes += frame->len;
 		}
 
 		if (!(netdev->flags & IFF_ECHO) ||
-			priv->tx_skb->pkt_type != PACKET_LOOPBACK ||
-			priv->tx_skb->protocol != htons(ETH_P_LORA))
+		    priv->tx_skb->pkt_type != PACKET_LOOPBACK ||
+		    priv->tx_skb->protocol != htons(ETH_P_LORA))
 			kfree_skb(priv->tx_skb);
 		priv->tx_skb = NULL;
 	}
@@ -857,8 +860,6 @@ static int sx130x_loradev_open(struct net_device *netdev)
 
 	/* TODO PPMi, and modem enable */
 
-
-
 	ret = sx1301_load_all_firmware(priv);
 	if (ret)
 		return ret;
@@ -917,6 +918,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 static int sx130x_loradev_stop(struct net_device *netdev)
 {
 	struct sx1301_priv *priv = netdev_priv(netdev);
+
 	netdev_dbg(netdev, "%s", __func__);
 
 	netif_stop_queue(netdev);
@@ -989,8 +991,8 @@ static int sx1301_probe(struct spi_device *spi)
 		const struct reg_field *reg_fields = sx1301_regmap_fields;
 
 		priv->regmap_fields[i] = devm_regmap_field_alloc(&spi->dev,
-				priv->regmap,
-				reg_fields[i]);
+								 priv->regmap,
+								 reg_fields[i]);
 		if (IS_ERR(priv->regmap_fields[i])) {
 			ret = PTR_ERR(priv->regmap_fields[i]);
 			dev_err(&spi->dev, "Cannot allocate regmap field: %d\n", ret);
