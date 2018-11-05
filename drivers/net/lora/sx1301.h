@@ -202,6 +202,8 @@ struct sx1301_priv {
 	struct workqueue_struct *wq;
 	struct work_struct tx_work;
 
+	unsigned int rx_channel[8];
+
 	struct sx1301_cal_table cal_table[2];
 
 	struct sx1301_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];

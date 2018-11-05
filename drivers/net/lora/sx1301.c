@@ -834,6 +834,8 @@ static int sx130x_loradev_open(struct net_device *netdev)
 		return -ENXIO;
 	}
 
+	/* TODO set the RX frequency */
+
 	priv->clk32m = devm_clk_get(priv->dev, "clk32m");
 	if (IS_ERR(priv->clk32m)) {
 		dev_err(priv->dev, "failed to get clk32m\n");
@@ -961,6 +963,79 @@ static const struct net_device_ops sx130x_net_device_ops = {
 	.ndo_start_xmit = sx130x_loradev_start_xmit,
 };
 
+static ssize_t sx1301_rx_channel_attr_show(struct device *dev, char *buf,
+	int rx_channel)
+{
+	struct sx1301_priv *priv = netdev_priv(to_net_dev(dev));
+
+	if (rx_channel > 7)
+		return -EINVAL;
+
+	return sprintf(buf, "%u\n", priv->rx_channel[rx_channel]);
+}
+
+static ssize_t sx1301_rx_channel_attr_store(struct device *dev, const char *buf,
+	size_t size, int rx_channel)
+{
+	struct sx1301_priv *priv = netdev_priv(to_net_dev(dev));
+	unsigned int val;
+	int ret;
+
+	if (rx_channel > 7)
+		return -EINVAL;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	/* TODO propper bounds checking for regions */
+	if ((val < 863000000) || (val > 870000000))
+		return -EINVAL;
+
+	priv->rx_channel[rx_channel] = val;
+
+	return size;
+}
+
+#define SX1301_RX_CHANNEL_ATTR(_channel)							\
+static ssize_t rx_channel_##_channel##_show(struct device *dev,		\
+	struct device_attribute *attr, char *buf)						\
+{																	\
+	return sx1301_rx_channel_attr_show(dev, buf, _channel);			\
+}																	\
+static ssize_t rx_channel_##_channel##_store(struct device *dev,	\
+	struct device_attribute *attr, const char *buf, size_t size)	\
+{																	\
+	return sx1301_rx_channel_attr_store(dev, buf, size, _channel);	\
+}																	\
+static DEVICE_ATTR_RW(rx_channel_##_channel);
+
+SX1301_RX_CHANNEL_ATTR(0)
+SX1301_RX_CHANNEL_ATTR(1)
+SX1301_RX_CHANNEL_ATTR(2)
+SX1301_RX_CHANNEL_ATTR(3)
+SX1301_RX_CHANNEL_ATTR(4)
+SX1301_RX_CHANNEL_ATTR(5)
+SX1301_RX_CHANNEL_ATTR(6)
+SX1301_RX_CHANNEL_ATTR(7)
+
+static struct attribute *sx1301_rx_channel_attrs[] = {
+	&dev_attr_rx_channel_0.attr,
+	&dev_attr_rx_channel_1.attr,
+	&dev_attr_rx_channel_2.attr,
+	&dev_attr_rx_channel_3.attr,
+	&dev_attr_rx_channel_4.attr,
+	&dev_attr_rx_channel_5.attr,
+	&dev_attr_rx_channel_6.attr,
+	&dev_attr_rx_channel_7.attr,
+	NULL
+};
+
+static struct attribute_group sx1301_rx_channel_group = {
+	.name = "rx_channels",
+	.attrs = (struct attribute **)sx1301_rx_channel_attrs,
+};
+
 static int sx1301_probe(struct spi_device *spi)
 {
 	struct net_device *netdev;
@@ -991,6 +1066,7 @@ static int sx1301_probe(struct spi_device *spi)
 		return -ENOMEM;
 
 	netdev->netdev_ops = &sx130x_net_device_ops;
+	netdev->sysfs_groups[0] = &sx1301_rx_channel_group;
 	SET_NETDEV_DEV(netdev, &spi->dev);
 
 	priv = netdev_priv(netdev);
