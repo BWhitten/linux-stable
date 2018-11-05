@@ -402,7 +402,7 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 {
 	const struct firmware *fw;
 	unsigned int val;
-	int ret;
+	int ret, i;
 
 	ret = request_firmware(&fw, "sx1301_agc_calibration.bin", priv->dev);
 	if (ret) {
@@ -493,6 +493,25 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 	if ((val & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
 		dev_err(priv->dev, "AGC calibration failed\n");
 		return -ENXIO;
+	}
+
+	/* Read back the I/Q calibration table per radio */
+	for (i = 0; i < 7; i++) {
+		ret = sx1301_agc_ram_read(priv, 0xA0 + i, &priv->cal_table[0].i[i]);
+		if (ret)
+			return ret;
+
+		ret = sx1301_agc_ram_read(priv, 0xA8 + i, &priv->cal_table[0].q[i]);
+		if (ret)
+			return ret;
+
+		ret = sx1301_agc_ram_read(priv, 0xB0 + i, &priv->cal_table[1].i[i]);
+		if (ret)
+			return ret;
+
+		ret = sx1301_agc_ram_read(priv, 0xB8 + i, &priv->cal_table[1].q[i]);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
