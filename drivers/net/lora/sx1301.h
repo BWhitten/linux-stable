@@ -183,6 +183,11 @@ struct sx1301_tx_gain_lut {
 	int rf_power;	/* dBm measured at board connector */
 };
 
+struct sx1301_cal_table {
+	unsigned int i[7];
+	unsigned int q[7];
+};
+
 struct sx1301_priv {
 	struct lora_dev_priv lora;
 	struct device		*dev;
@@ -195,6 +200,8 @@ struct sx1301_priv {
 
 	struct workqueue_struct *wq;
 	struct work_struct tx_work;
+
+	struct sx1301_cal_table cal_table[2];
 
 	struct sx1301_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];
 	u8 tx_gain_lut_size;
