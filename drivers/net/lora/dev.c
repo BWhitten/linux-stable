@@ -11,8 +11,6 @@
 #include <linux/lora/skb.h>
 #include <net/rtnetlink.h>
 
-#define LORA_MTU 256 /* XXX */
-
 struct sk_buff *alloc_lora_skb(struct net_device *dev, u8 **data)
 {
 	struct sk_buff *skb;

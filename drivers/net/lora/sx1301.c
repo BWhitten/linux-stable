@@ -583,7 +583,7 @@ static int sx1301_load_tx_gain_lut(struct sx1301_priv *priv)
 	return ret;
 };
 
-static int sx1301_tx(struct sx1301_priv *priv, void *data, int len)
+static int sx1301_tx(struct sx1301_priv *priv, struct lora_frame *frame)
 {
 	int ret, i;
 	u8 buff[256 + 16];
@@ -616,11 +616,67 @@ static int sx1301_tx(struct sx1301_priv *priv, void *data, int len)
 	hdr->tx_power = 15; /* HACK power entry 15 */
 
 	hdr->u.lora.crc16_en = 1; /* Enable CRC16 */
-	hdr->u.lora.cr = 1; /* CR 4/5 */
-	hdr->u.lora.sf = 7; /* SF7 */
-	hdr->u.lora.payload_len = len; /* Set the data len to the skb len */
+
+	switch (frame->cr) {
+	case LORA_CR_4_5:
+		hdr->u.lora.cr = 1; /* CR 4/5 */
+		break;
+	case LORA_CR_4_6:
+		hdr->u.lora.cr = 2; /* CR 4/6 */
+		break;
+	case LORA_CR_4_7:
+		hdr->u.lora.cr = 3; /* CR 4/7 */
+		break;
+	case LORA_CR_4_8:
+		hdr->u.lora.cr = 4; /* CR 4/8 */
+		break;
+	default:
+		return -ENXIO;
+	}
+
+	switch (frame->sf) {
+	case LORA_SF_6:
+		hdr->u.lora.sf = 6; /* SF6 */
+		break;
+	case LORA_SF_7:
+		hdr->u.lora.sf = 7; /* SF7 */
+		break;
+	case LORA_SF_8:
+		hdr->u.lora.sf = 8; /* SF8 */
+		break;
+	case LORA_SF_9:
+		hdr->u.lora.sf = 9; /* SF9 */
+		break;
+	case LORA_SF_10:
+		hdr->u.lora.sf = 10; /* SF10 */
+		break;
+	case LORA_SF_11:
+		hdr->u.lora.sf = 11; /* SF11 */
+		break;
+	case LORA_SF_12:
+		hdr->u.lora.sf = 12; /* SF12 */
+		break;
+	default:
+		return -ENXIO;
+	}
+
+	hdr->u.lora.payload_len = frame->len; /* Set the data length */
 	hdr->u.lora.implicit_header = 0; /* No implicit header */
-	hdr->u.lora.mod_bw = 0; /* Set 125KHz BW */
+
+	switch (frame->bw) {
+	case LORA_BW_125KHZ:
+		hdr->u.lora.mod_bw = 0; /* 125KHz BW */
+		break;
+	case LORA_BW_250KHZ:
+		hdr->u.lora.mod_bw = 1; /* 250KHz BW */
+		break;
+	case LORA_BW_500KHZ:
+		hdr->u.lora.mod_bw = 2; /* 500KHz BW */
+		break;
+	default:
+		return -ENXIO;
+	}
+
 	hdr->u.lora.ppm_offset = 0; /* TODO no ppm offset? */
 	hdr->u.lora.invert_pol = 0; /* TODO set no inverted polarity */
 
@@ -631,7 +687,7 @@ static int sx1301_tx(struct sx1301_priv *priv, void *data, int len)
 
 	/* Copy the TX data into the buffer ready to go */
 
-	memcpy((void *)&buff[16], data, len);
+	memcpy((void *)&buff[16], frame->data, frame->len);
 
 	/* Reset any transmissions */
 	ret = regmap_write(priv->regmap, SX1301_TX_TRIG, 0);
@@ -643,7 +699,7 @@ static int sx1301_tx(struct sx1301_priv *priv, void *data, int len)
 	if (ret)
 		return ret;
 	ret = regmap_noinc_write(priv->regmap, SX1301_TX_DATA_BUF_DATA, buff,
-				 len + 16);
+				 frame->len + 16);
 	if (ret)
 		return ret;
 
@@ -652,8 +708,8 @@ static int sx1301_tx(struct sx1301_priv *priv, void *data, int len)
 	if (ret)
 		return ret;
 
-	dev_dbg(priv->dev, "Transmitting packet of size %d: ", len);
-	for (i = 0; i < len + 16; i++)
+	dev_dbg(priv->dev, "Transmitting packet of size %d: ", frame->len);
+	for (i = 0; i < frame->len + 16; i++)
 		dev_dbg(priv->dev, "%X", buff[i]);
 
 	return ret;
@@ -682,17 +738,18 @@ static void sx1301_tx_work_handler(struct work_struct *ws)
 	struct sx1301_priv *priv = container_of(ws, struct sx1301_priv,
 						tx_work);
 	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	struct lora_frame *frame = (struct lora_frame *)priv->tx_skb->data;
 	int ret;
 
 	netdev_dbg(netdev, "%s\n", __func__);
 
 	if (priv->tx_skb) {
-		ret = sx1301_tx(priv, priv->tx_skb->data, priv->tx_skb->len);
+		ret = sx1301_tx(priv, frame);
 		if (ret) {
 			netdev->stats.tx_errors++;
 		} else {
 			netdev->stats.tx_packets++;
-			netdev->stats.tx_bytes += priv->tx_skb->len;
+			netdev->stats.tx_bytes += frame->len;
 		}
 
 		if (!(netdev->flags & IFF_ECHO) ||
