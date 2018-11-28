@@ -63,6 +63,23 @@ struct sx1301_tx_header {
 	} u;
 } __packed;
 
+struct sx1301_rx_meta {
+	u8	channel;
+	u8	sf:4,
+		cr:3,
+		crc16_en:1;
+	u8	snr_av;
+	u8	snr_min;
+	u8	snr_max;
+	u8	rssi;
+	__be32	timestamp;
+	__be16	crc;
+	u8	modem;
+	__be16	corr_position;
+	u8	corr_snr;
+	u8	reserved[2];
+} __packed;
+
 static struct sx1301_tx_gain_lut tx_gain_lut[] = {
 	{
 		.dig_gain = 0,
@@ -387,7 +404,22 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
+	val = 0;
+	/* TODO do the propper calibration command */
+	/* TODO get which radios are enabled */
+/*	if (radioA) {
+		val |= BIT(0); /* Calibrate Rx IQ mismatch compensation on radio A */
+/*		if (radioA_TX)
+			val |= BIT(2); /* Calibrate Tx DC offset on radio A */
+/*	}
+	if (radioB) {
+		val |= BIT(1); /* Calibrate Rx IQ mismatch compensation on radio B */
+/*		if (radioB_TX)
+			val |= BIT(3); /* Calibrate Tx DC offset on radio B */
+/*	}*/
 	val = BIT(4); /* with DAC gain=3 */
+
+	/* TODO radio type set here, only one type per board */
 	if (false)
 		val |= BIT(5); /* SX1255 */
 
