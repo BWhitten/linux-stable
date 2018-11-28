@@ -553,7 +553,7 @@ static int sx1301_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	msleep(5);
+	usleep_range(5000, 6000);
 
 	ret = sx1301_field_write(priv, F_RADIO_RST, 0);
 	if (ret) {
