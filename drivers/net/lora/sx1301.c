@@ -24,6 +24,44 @@
 
 #include "sx1301.h"
 
+struct sx1301_tx_header {
+	u8	tx_freq[3];
+	u32	start;
+	u8  tx_power:4,
+		modulation_type:1,
+		radio_select:1,
+		resered0:2;
+	u8	reserved1;
+
+	union {
+		struct lora_t {
+			u8	sf:4,
+				cr:3,
+				crc16_en:1;
+			u8	payload_len;
+			u8	mod_bw:2,
+				implicit_header:1,
+				ppm_offset:1,
+				invert_pol:1,
+				reserved0:3;
+			u16	preamble;
+			u8	reserved1;
+			u8	reserved2;
+		} lora;
+		struct fsk_t {
+			u8	freq_dev;
+			u8	payload_len;
+			u8	packet_mode:1,
+				crc_en:1,
+				enc_mode:2,
+				crc_mode:1,
+				reserved0:3;
+			u16	preamble;
+			u16	bitrate;
+		} fsk;
+	} u;
+} __packed;
+
 static struct sx1301_tx_gain_lut tx_gain_lut[] = {
 	{
 		.dig_gain = 0,
@@ -545,9 +583,87 @@ static int sx1301_load_tx_gain_lut(struct sx1301_priv *priv)
 	return ret;
 };
 
+static int sx1301_tx(struct sx1301_priv *priv, void *data, int len)
+{
+	int ret, i;
+	u8 buff[256 + 16];
+	struct sx1301_tx_header *hdr = (struct sx1301_tx_header *)buff;
+
+	/* TODO general checks to make sure we CAN send */
+
+	/* TODO Enable notch filter for lora 125 */
+
+	/* TODO get start delay for this TX */
+
+	/* TODO interpret tx power, HACK just set max power */
+
+	/* TODO get TX imbalance for this pow index from calibration step */
+
+	/* TODO set the dig gain */
+
+	/* TODO set TX PLL freq based on radio used to TX */
+
+	memset(buff, 0, sizeof(buff));
+
+	/* HACK set to 868MHz */
+	hdr->tx_freq[0] = 217;
+	hdr->tx_freq[1] = 0;
+	hdr->tx_freq[3] = 0;
+
+	hdr->start = 0; /* Start imediatly */
+	hdr->radio_select = 0; /* HACK Radio A transmit */
+	hdr->modulation_type = 0; /* HACK modulation LORA */
+	hdr->tx_power = 15; /* HACK power entry 15 */
+
+	hdr->u.lora.crc16_en = 1; /* Enable CRC16 */
+	hdr->u.lora.cr = 1; /* CR 4/5 */
+	hdr->u.lora.sf = 7; /* SF7 */
+	hdr->u.lora.payload_len = len; /* Set the data len to the skb len */
+	hdr->u.lora.implicit_header = 0; /* No implicit header */
+	hdr->u.lora.mod_bw = 0; /* Set 125KHz BW */
+	hdr->u.lora.ppm_offset = 0; /* TODO no ppm offset? */
+	hdr->u.lora.invert_pol = 0; /* TODO set no inverted polarity */
+
+	hdr->u.lora.preamble = 8; /* Set the standard preamble */
+
+	/* TODO 2 Msb in tx_freq0 for large narrow filtering, unset for now */
+	hdr->tx_freq[0] &= 0x3F;
+
+	/* Copy the TX data into the buffer ready to go */
+
+	memcpy((void *)&buff[16], data, len);
+
+	/* Reset any transmissions */
+	ret = regmap_write(priv->regmap, SX1301_TX_TRIG, 0);
+	if (ret)
+		return ret;
+
+	/* Put the buffer into the tranmit fifo */
+	ret = regmap_write(priv->regmap, SX1301_TX_DATA_BUF_ADDR, 0);
+	if (ret)
+		return ret;
+	ret = regmap_noinc_write(priv->regmap, SX1301_TX_DATA_BUF_DATA, buff,
+				 len + 16);
+	if (ret)
+		return ret;
+
+	/* HACK just go for immediate transfer */
+	ret = sx1301_field_write(priv, F_TX_TRIG_IMMEDIATE, 1);
+	if (ret)
+		return ret;
+
+	dev_dbg(priv->dev, "Transmitting packet of size %d: ", len);
+	for (i = 0; i < len + 16; i++)
+		dev_dbg(priv->dev, "%X", buff[i]);
+
+	return ret;
+}
+
 static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb,
 					     struct net_device *netdev)
 {
+	struct sx1301_priv *priv = netdev_priv(netdev);
+
 	if (skb->protocol != htons(ETH_P_LORA)) {
 		kfree_skb(skb);
 		netdev->stats.tx_dropped++;
@@ -555,9 +671,40 @@ static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb,
 	}
 
 	netif_stop_queue(netdev);
+	priv->tx_skb = skb;
+	queue_work(priv->wq, &priv->tx_work);
 
-	/* TODO */
 	return NETDEV_TX_OK;
+}
+
+static void sx1301_tx_work_handler(struct work_struct *ws)
+{
+	struct sx1301_priv *priv = container_of(ws, struct sx1301_priv,
+						tx_work);
+	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	int ret;
+
+	netdev_dbg(netdev, "%s\n", __func__);
+
+	if (priv->tx_skb) {
+		ret = sx1301_tx(priv, priv->tx_skb->data, priv->tx_skb->len);
+		if (ret) {
+			netdev->stats.tx_errors++;
+		} else {
+			netdev->stats.tx_packets++;
+			netdev->stats.tx_bytes += priv->tx_skb->len;
+		}
+
+		if (!(netdev->flags & IFF_ECHO) ||
+		    priv->tx_skb->pkt_type != PACKET_LOOPBACK ||
+		    priv->tx_skb->protocol != htons(ETH_P_LORA))
+			kfree_skb(priv->tx_skb);
+
+		priv->tx_skb = NULL;
+	}
+
+	if (netif_queue_stopped(netdev))
+		netif_wake_queue(netdev);
 }
 
 static int sx130x_loradev_open(struct net_device *netdev)
@@ -663,6 +810,12 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	if (ret)
 		return ret;
 
+	priv->tx_skb = NULL;
+
+	priv->wq = alloc_workqueue("sx1301_wq",
+				   WQ_FREEZABLE | WQ_MEM_RECLAIM, 0);
+	INIT_WORK(&priv->tx_work, sx1301_tx_work_handler);
+
 	netif_start_queue(netdev);
 
 	return 0;
@@ -670,10 +823,21 @@ static int sx130x_loradev_open(struct net_device *netdev)
 
 static int sx130x_loradev_stop(struct net_device *netdev)
 {
+	struct sx1301_priv *priv = netdev_priv(netdev);
+
 	netdev_dbg(netdev, "%s", __func__);
 
 	netif_stop_queue(netdev);
 	close_loradev(netdev);
+
+	destroy_workqueue(priv->wq);
+	priv->wq = NULL;
+
+	if (priv->tx_skb)
+		netdev->stats.tx_errors++;
+	if (priv->tx_skb)
+		dev_kfree_skb(priv->tx_skb);
+	priv->tx_skb = NULL;
 
 	return 0;
 }
