@@ -20,6 +20,11 @@
 #define SX1301_MCU_AGC_FW_VERSION 4
 #define SX1301_MCU_AGC_CAL_FW_VERSION 2
 
+#define SX1301_AGC_CMD_WAIT 16
+#define SX1301_AGC_CMD_ABORT 17
+
+#define SX1301_TX_GAIN_LUT_MAX 16
+
 /* Page independent */
 #define SX1301_PAGE     0x00
 #define SX1301_VER      0x01
@@ -105,6 +110,14 @@ static const struct reg_field sx1301_regmap_fields[] = {
 		REG_FIELD(SX1301_EMERGENCY_FORCE_HOST_CTRL, 0, 0),
 };
 
+struct sx1301_tx_gain_lut {
+	unsigned int	dig_gain:2,
+			pa_gain:2,
+			dac_gain:2,
+			mix_gain:4;
+	int rf_power;	/* dBm measured at board connector */
+};
+
 struct sx1301_priv {
 	struct lora_dev_priv lora;
 	struct device		*dev;
@@ -112,6 +125,9 @@ struct sx1301_priv {
 	struct gpio_desc *rst_gpio;
 	struct regmap		*regmap;
 	struct regmap_field *regmap_fields[ARRAY_SIZE(sx1301_regmap_fields)];
+
+	struct sx1301_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];
+	u8 tx_gain_lut_size;
 };
 
 int __init sx130x_radio_init(void);

@@ -24,6 +24,121 @@
 
 #include "sx1301.h"
 
+static struct sx1301_tx_gain_lut tx_gain_lut[] = {
+	{
+		.dig_gain = 0,
+		.pa_gain = 0,
+		.dac_gain = 3,
+		.mix_gain = 8,
+		.rf_power = -3,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 0,
+		.dac_gain = 3,
+		.mix_gain = 9,
+		.rf_power = 0,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 0,
+		.dac_gain = 3,
+		.mix_gain = 12,
+		.rf_power = 3,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 0,
+		.dac_gain = 3,
+		.mix_gain = 13,
+		.rf_power = 4,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 1,
+		.dac_gain = 3,
+		.mix_gain = 8,
+		.rf_power = 6,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 1,
+		.dac_gain = 3,
+		.mix_gain = 9,
+		.rf_power = 9,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 1,
+		.dac_gain = 3,
+		.mix_gain = 10,
+		.rf_power = 10,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 1,
+		.dac_gain = 3,
+		.mix_gain = 11,
+		.rf_power = 12,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 1,
+		.dac_gain = 3,
+		.mix_gain = 12,
+		.rf_power = 13,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 1,
+		.dac_gain = 3,
+		.mix_gain = 13,
+		.rf_power = 14,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 1,
+		.dac_gain = 3,
+		.mix_gain = 15,
+		.rf_power = 16,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 2,
+		.dac_gain = 3,
+		.mix_gain = 10,
+		.rf_power = 19,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 2,
+		.dac_gain = 3,
+		.mix_gain = 11,
+		.rf_power = 21,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 2,
+		.dac_gain = 3,
+		.mix_gain = 12,
+		.rf_power = 22,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 2,
+		.dac_gain = 3,
+		.mix_gain = 13,
+		.rf_power = 24,
+	},
+	{
+		.dig_gain = 0,
+		.pa_gain = 2,
+		.dac_gain = 3,
+		.mix_gain = 14,
+		.rf_power = 25,
+	},
+};
+
 static const struct regmap_range_cfg sx1301_regmap_ranges[] = {
 	{
 		.name = "Pages",
@@ -178,6 +293,34 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu,
 	ret = sx1301_field_write(priv, select_mux, 1);
 	if (ret) {
 		dev_err(priv->dev, "MCU RAM release mux failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int sx1301_agc_transaction(struct sx1301_priv *priv, unsigned int val,
+				  unsigned int *status)
+{
+	int ret;
+
+	ret = regmap_write(priv->regmap, SX1301_CHRS, SX1301_AGC_CMD_WAIT);
+	if (ret) {
+		dev_err(priv->dev, "AGC transaction start failed\n");
+		return ret;
+	}
+	usleep_range(1000, 2000);
+
+	ret = regmap_write(priv->regmap, SX1301_CHRS, val);
+	if (ret) {
+		dev_err(priv->dev, "AGC transaction value failed\n");
+		return ret;
+	}
+	usleep_range(1000, 2000);
+
+	ret = regmap_read(priv->regmap, SX1301_AGCSTS, status);
+	if (ret) {
+		dev_err(priv->dev, "AGC status read failed\n");
 		return ret;
 	}
 
@@ -356,8 +499,51 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return -ENXIO;
 	}
 
-	return 0;
+	return ret;
 }
+
+static int sx1301_load_tx_gain_lut(struct sx1301_priv *priv)
+{
+	struct sx1301_tx_gain_lut *lut = priv->tx_gain_lut;
+	unsigned int val, status;
+	int ret, i;
+
+	/* HACK use internal gain table in the short term */
+	lut = tx_gain_lut;
+	priv->tx_gain_lut_size = ARRAY_SIZE(tx_gain_lut);
+
+	for (i = 0; i < priv->tx_gain_lut_size; i++) {
+		val = lut->mix_gain + (lut->dac_gain << 4) +
+			(lut->pa_gain << 6);
+		ret = sx1301_agc_transaction(priv, val, &status);
+		if (ret) {
+			dev_err(priv->dev, "AGC LUT load failed\n");
+			return ret;
+		}
+		if (val != (0x30 + i)) {
+			dev_err(priv->dev,
+				"AGC firmware LUT init error: 0x%02X", val);
+			return -ENXIO;
+		}
+		lut++;
+	}
+
+	/* Abort the transaction if there are less then 16 entries */
+	if (priv->tx_gain_lut_size < SX1301_TX_GAIN_LUT_MAX) {
+		ret = sx1301_agc_transaction(priv, SX1301_AGC_CMD_ABORT, &val);
+		if (ret) {
+			dev_err(priv->dev, "AGC LUT abort failed\n");
+			return ret;
+		}
+		if (val != 0x30) {
+			dev_err(priv->dev,
+				"AGC firmware LUT abort error: 0x%02X", val);
+			return -ENXIO;
+		}
+	}
+
+	return ret;
+};
 
 static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb,
 					     struct net_device *netdev)
@@ -378,6 +564,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx1301_priv *priv = netdev_priv(netdev);
 	int ret;
+	unsigned int val;
 
 	netdev_dbg(netdev, "%s", __func__);
 
@@ -416,11 +603,61 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	if (ret)
 		return ret;
 
-	/* TODO */
+	/* TODO Load constant adjustments, patches */
+
+	/* TODO Frequency time drift */
+
+	/* TODO Configure lora multi demods, bitfield of active */
+
+	/* TODO Load concenrator multi channel frequencies */
+
+	/* TODO enale to correlator on enabled frequenies */
+
+	/* TODO PPMi, and modem enable */
 
 	ret = sx1301_load_all_firmware(priv);
 	if (ret)
 		return ret;
+
+	ret = sx1301_load_tx_gain_lut(priv);
+	if (ret)
+		return ret;
+
+	/* Load Tx freq MSBs
+	 * Always 3 if f > 768 for SX1257 or f > 384 for SX1255
+	 */
+	ret = sx1301_agc_transaction(priv, 3, &val);
+	if (ret) {
+		dev_err(priv->dev, "AGC Tx MSBs load failed\n");
+		return ret;
+	}
+	if (val != 0x33) {
+		dev_err(priv->dev, "AGC firmware Tx MSBs error: 0x%02X", val);
+		return -ENXIO;
+	}
+
+	/* Load chan_select firmware option */
+	ret = sx1301_agc_transaction(priv, 0, &val);
+	if (ret) {
+		dev_err(priv->dev, "AGC chan select failed\n");
+		return ret;
+	}
+	if (val != 0x30) {
+		dev_err(priv->dev,
+			"AGC firmware chan select error: 0x%02X", val);
+		return -ENXIO;
+	}
+
+	/* End AGC firmware init and check status */
+	ret = sx1301_agc_transaction(priv, 0, &val);
+	if (ret) {
+		dev_err(priv->dev, "AGC radio select failed\n");
+		return ret;
+	}
+	if (val != 0x40) {
+		dev_err(priv->dev, "AGC firmware init error: 0x%02X", val);
+		return -ENXIO;
+	}
 
 	ret = open_loradev(netdev);
 	if (ret)
