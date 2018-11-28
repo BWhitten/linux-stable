@@ -28,6 +28,10 @@
 /* Page independent */
 #define SX1301_PAGE     0x00
 #define SX1301_VER      0x01
+#define SX1301_RX_DATA_BUF_ADDR 0x02 /* 16 wide */
+#define SX1301_RX_DATA_BUF_DATA 0x04
+#define SX1301_TX_DATA_BUF_ADDR 0x05
+#define SX1301_TX_DATA_BUF_DATA 0x06
 #define SX1301_MPA      0x09
 #define SX1301_MPD      0x0A
 #define SX1301_GEN      0x10
@@ -44,6 +48,9 @@
 #define SX1301_CHRS         (SX1301_PAGE_BASE(0) + 0x23)
 #define SX1301_FORCE_CTRL   (SX1301_PAGE_BASE(0) + 0x69)
 #define SX1301_MCU_CTRL     (SX1301_PAGE_BASE(0) + 0x6A)
+
+/* Page 1 */
+#define SX1301_TX_TRIG      (SX1301_PAGE_BASE(1) + 0x21)
 
 /* Page 2 */
 #define SX1301_RADIO_A_SPI_DATA     (SX1301_PAGE_BASE(2) + 0x21)
@@ -83,6 +90,10 @@ enum sx1301_fields {
 	F_FORCE_DEC_FILTER_GAIN,
 
 	F_EMERGENCY_FORCE_HOST_CTRL,
+
+	F_TX_TRIG_IMMEDIATE,
+	F_TX_TRIG_DELAYED,
+	F_TX_TRIG_GPS,
 };
 
 static const struct reg_field sx1301_regmap_fields[] = {
@@ -108,6 +119,11 @@ static const struct reg_field sx1301_regmap_fields[] = {
 	/* EMERGENCY_FORCE_HOST_CTRL */
 	[F_EMERGENCY_FORCE_HOST_CTRL] =
 		REG_FIELD(SX1301_EMERGENCY_FORCE_HOST_CTRL, 0, 0),
+	/* TX_TRIG */
+	[F_TX_TRIG_IMMEDIATE] = REG_FIELD(SX1301_TX_TRIG, 0, 0),
+	[F_TX_TRIG_DELAYED] = REG_FIELD(SX1301_TX_TRIG, 1, 1),
+	[F_TX_TRIG_GPS] = REG_FIELD(SX1301_TX_TRIG, 2, 2),
+
 };
 
 struct sx1301_tx_gain_lut {
@@ -125,6 +141,11 @@ struct sx1301_priv {
 	struct gpio_desc *rst_gpio;
 	struct regmap		*regmap;
 	struct regmap_field *regmap_fields[ARRAY_SIZE(sx1301_regmap_fields)];
+
+	struct sk_buff *tx_skb;
+
+	struct workqueue_struct *wq;
+	struct work_struct tx_work;
 
 	struct sx1301_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];
 	u8 tx_gain_lut_size;
