@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/*
- * Semtech SX1301 LoRa concentrator
+/* Semtech SX1301 LoRa concentrator
  *
  * Copyright (c) 2018 Andreas Färber
  * Copyright (c) 2018 Ben Whitten
@@ -74,13 +73,16 @@ static struct regmap_config sx1301_regmap_config = {
 	.max_register = SX1301_MAX_REGISTER,
 };
 
-static int sx1301_read_burst(struct sx1301_priv *priv, u8 reg, u8 *val, size_t len)
+static int sx1301_read_burst(struct sx1301_priv *priv, u8 reg, u8 *val,
+			     size_t len)
 {
 	u8 addr = reg & 0x7f;
+
 	return spi_write_then_read(priv->spi, &addr, 1, val, len);
 }
 
-static int sx1301_write_burst(struct sx1301_priv *priv, u8 reg, const u8 *val, size_t len)
+static int sx1301_write_burst(struct sx1301_priv *priv, u8 reg, const u8 *val,
+			      size_t len)
 {
 	u8 addr = reg | BIT(7);
 	struct spi_transfer xfr[2] = {
@@ -93,10 +95,12 @@ static int sx1301_write_burst(struct sx1301_priv *priv, u8 reg, const u8 *val, s
 
 static int sx1301_soft_reset(struct sx1301_priv *priv)
 {
-	return regmap_write(priv->regmap, SX1301_PAGE, REG_PAGE_RESET_SOFT_RESET);
+	return regmap_write(priv->regmap, SX1301_PAGE,
+			    REG_PAGE_RESET_SOFT_RESET);
 }
 
-static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *val)
+static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr,
+			       unsigned int *val)
 {
 	int ret;
 
@@ -115,7 +119,8 @@ static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *
 	return 0;
 }
 
-static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *val)
+static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr,
+			       unsigned int *val)
 {
 	int ret;
 
@@ -134,7 +139,8 @@ static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *
 	return 0;
 }
 
-static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct firmware *fw)
+static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu,
+				const struct firmware *fw)
 {
 	u8 *buf;
 	u8 rst, select_mux;
@@ -204,7 +210,8 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct 
 	}
 
 	if (memcmp(fw->data, buf, fw->size)) {
-		dev_err(priv->dev, "MCU prom data read does not match data written\n");
+		dev_err(priv->dev,
+			"MCU prom data read does not match data written\n");
 		kfree(buf);
 		return -ENXIO;
 	}
@@ -291,11 +298,12 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC calibration firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "AGC calibration firmware version %u\n", val);
 
 	if (val != SX1301_MCU_AGC_CAL_FW_VERSION) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_AGC_CAL_FW_VERSION);
+		dev_err(priv->dev,
+			"unexpected firmware version, expecting %u\n",
+			SX1301_MCU_AGC_CAL_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -336,7 +344,7 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC status: %02x\n", (unsigned)val);
+	dev_info(priv->dev, "AGC status: %02x\n", val);
 	if ((val & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
 		dev_err(priv->dev, "AGC calibration failed\n");
 		return -ENXIO;
@@ -379,7 +387,8 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	val &= ~(REG_0_105_FORCE_HOST_RADIO_CTRL | REG_0_105_FORCE_HOST_FE_CTRL | REG_0_105_FORCE_DEC_FILTER_GAIN);
+	val &= ~(REG_0_105_FORCE_HOST_RADIO_CTRL | REG_0_105_FORCE_HOST_FE_CTRL
+		| REG_0_105_FORCE_DEC_FILTER_GAIN);
 
 	ret = regmap_write(priv->regmap, SX1301_FORCE_CTRL, val);
 	if (ret) {
@@ -413,11 +422,12 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "AGC firmware version %u\n", val);
 
 	if (val != SX1301_MCU_AGC_FW_VERSION) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_AGC_FW_VERSION);
+		dev_err(priv->dev,
+			"unexpected firmware version, expecting %u\n",
+			SX1301_MCU_AGC_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -427,18 +437,20 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "ARB firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "ARB firmware version %u\n", val);
 
 	if (val != SX1301_MCU_ARB_FW_VERSION) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_ARB_FW_VERSION);
+		dev_err(priv->dev,
+			"unexpected firmware version, expecting %u\n",
+			SX1301_MCU_ARB_FW_VERSION);
 		return -ENXIO;
 	}
 
 	return 0;
 }
 
-static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb,
+					     struct net_device *netdev)
 {
 	if (skb->protocol != htons(ETH_P_LORA)) {
 		kfree_skb(skb);
@@ -656,7 +668,7 @@ static int sx1301_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	msleep(5);
+	usleep_range(5000, 6000);
 
 	ret = regmap_read(priv->regmap, SX1301_RADIO_CFG, &val);
 	if (ret) {

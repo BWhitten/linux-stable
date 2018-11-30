@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/*
- * Semtech SX1301 LoRa concentrator
+/* Semtech SX1301 LoRa concentrator
  *
  * Copyright (c) 2018   Ben Whitten
  * Copyright (c) 2018 Andreas Färber
@@ -34,7 +33,7 @@
 
 #define SX1301_VIRT_BASE    0x100
 #define SX1301_PAGE_LEN     0x80
-#define SX1301_PAGE_BASE(n) (SX1301_VIRT_BASE + (SX1301_PAGE_LEN * n))
+#define SX1301_PAGE_BASE(n) (SX1301_VIRT_BASE + (SX1301_PAGE_LEN * (n)))
 
 /* Page 0 */
 #define SX1301_CHRS         (SX1301_PAGE_BASE(0) + 0x23)
