@@ -390,7 +390,22 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
+	val = 0;
+	/* TODO do the propper calibration command */
+	/* TODO get which radios are enabled */
+	/*	if radio a is enabled
+		val |= BIT(0);  Calibrate Rx IQ mismatch compensation on radio A
+		if radio a is transmitter
+			val |= BIT(2);  Calibrate Tx DC offset on radio A
+
+		if radio b is enabled
+		val |= BIT(1);  Calibrate Rx IQ mismatch compensation on radio B
+		if radio b is transmitter
+			val |= BIT(3);  Calibrate Tx DC offset on radio B
+	*/
 	val = BIT(4); /* with DAC gain=3 */
+
+	/* TODO radio type set here, only one type per board */
 	if (false)
 		val |= BIT(5); /* SX1255 */
 
