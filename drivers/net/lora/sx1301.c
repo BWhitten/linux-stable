@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/*
- * Semtech SX1301 LoRa concentrator
+/* Semtech SX1301 LoRa concentrator
  *
  * Copyright (c) 2018 Andreas Färber
  * Copyright (c) 2018 Ben Whitten
@@ -55,12 +54,13 @@ static struct regmap_config sx1301_regmap_config = {
 };
 
 static int sx1301_field_write(struct sx1301_priv *priv,
-		enum sx1301_fields field_id, u8 val)
+			      enum sx1301_fields field_id, u8 val)
 {
 	return regmap_field_write(priv->regmap_fields[field_id], val);
 }
 
-static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *val)
+static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr,
+			       unsigned int *val)
 {
 	int ret;
 
@@ -79,7 +79,8 @@ static int sx1301_agc_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *
 	return 0;
 }
 
-static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *val)
+static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr,
+			       unsigned int *val)
 {
 	int ret;
 
@@ -98,7 +99,8 @@ static int sx1301_arb_ram_read(struct sx1301_priv *priv, u8 addr, unsigned int *
 	return 0;
 }
 
-static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct firmware *fw)
+static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu,
+				const struct firmware *fw)
 {
 	u8 *buf;
 	enum sx1301_fields rst, select_mux;
@@ -165,7 +167,8 @@ static int sx1301_load_firmware(struct sx1301_priv *priv, int mcu, const struct 
 	}
 
 	if (memcmp(fw->data, buf, fw->size)) {
-		dev_err(priv->dev, "MCU prom data read does not match data written\n");
+		dev_err(priv->dev,
+			"MCU prom data read does not match data written\n");
 		kfree(buf);
 		return -ENXIO;
 	}
@@ -228,11 +231,12 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC calibration firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "AGC calibration firmware version %u\n", val);
 
 	if (val != SX1301_MCU_AGC_CAL_FW_VERSION) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_AGC_CAL_FW_VERSION);
+		dev_err(priv->dev,
+			"unexpected firmware version, expecting %u\n",
+			SX1301_MCU_AGC_CAL_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -257,7 +261,7 @@ static int sx1301_agc_calibrate(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC status: %02x\n", (unsigned)val);
+	dev_info(priv->dev, "AGC status: %02x\n", val);
 	if ((val & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
 		dev_err(priv->dev, "AGC calibration failed\n");
 		return -ENXIO;
@@ -328,11 +332,12 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "AGC firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "AGC firmware version %u\n", val);
 
 	if (val != SX1301_MCU_AGC_FW_VERSION) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_AGC_FW_VERSION);
+		dev_err(priv->dev,
+			"unexpected firmware version, expecting %u\n",
+			SX1301_MCU_AGC_FW_VERSION);
 		return -ENXIO;
 	}
 
@@ -342,18 +347,20 @@ static int sx1301_load_all_firmware(struct sx1301_priv *priv)
 		return ret;
 	}
 
-	dev_info(priv->dev, "ARB firmware version %u\n", (unsigned)val);
+	dev_info(priv->dev, "ARB firmware version %u\n", val);
 
 	if (val != SX1301_MCU_ARB_FW_VERSION) {
-		dev_err(priv->dev, "unexpected firmware version, expecting %u\n",
-				SX1301_MCU_ARB_FW_VERSION);
+		dev_err(priv->dev,
+			"unexpected firmware version, expecting %u\n",
+			SX1301_MCU_ARB_FW_VERSION);
 		return -ENXIO;
 	}
 
 	return 0;
 }
 
-static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb,
+					     struct net_device *netdev)
 {
 	if (skb->protocol != htons(ETH_P_LORA)) {
 		kfree_skb(skb);
@@ -489,11 +496,12 @@ static int sx1301_probe(struct spi_device *spi)
 		const struct reg_field *reg_fields = sx1301_regmap_fields;
 
 		priv->regmap_fields[i] = devm_regmap_field_alloc(&spi->dev,
-				priv->regmap,
-				reg_fields[i]);
+								 priv->regmap,
+								 reg_fields[i]);
 		if (IS_ERR(priv->regmap_fields[i])) {
 			ret = PTR_ERR(priv->regmap_fields[i]);
-			dev_err(&spi->dev, "Cannot allocate regmap field: %d\n", ret);
+			dev_err(&spi->dev,
+				"Cannot allocate regmap field: %d\n", ret);
 			return ret;
 		}
 	}
@@ -553,7 +561,7 @@ static int sx1301_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	msleep(5);
+	usleep_range(5000, 6000);
 
 	ret = sx1301_field_write(priv, F_RADIO_RST, 0);
 	if (ret) {

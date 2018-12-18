@@ -49,7 +49,7 @@ struct sx125x_priv {
 
 	struct device		*dev;
 	struct regmap		*regmap;
-	struct regmap_field     *regmap_fields[ARRAY_SIZE(sx125x_regmap_fields)];
+	struct regmap_field *regmap_fields[ARRAY_SIZE(sx125x_regmap_fields)];
 };
 
 #define to_clkout(_hw) container_of(_hw, struct sx125x_priv, clkout_hw)
@@ -67,13 +67,13 @@ static struct regmap_config __maybe_unused sx125x_regmap_config = {
 };
 
 static int sx125x_field_write(struct sx125x_priv *priv,
-		enum sx125x_fields field_id, u8 val)
+			      enum sx125x_fields field_id, u8 val)
 {
 	return regmap_field_write(priv->regmap_fields[field_id], val);
 }
 
 static int sx125x_field_read(struct sx125x_priv *priv,
-		enum sx125x_fields field_id, unsigned int *val)
+			     enum sx125x_fields field_id, unsigned int *val)
 {
 	return regmap_field_read(priv->regmap_fields[field_id], val);
 }
@@ -149,8 +149,12 @@ static int sx125x_register_clock_provider(struct sx125x_priv *priv)
 	init.num_parents = 1;
 	priv->clkout_hw.init = &init;
 
-	of_property_read_string_index(dev->of_node, "clock-output-names", 0,
-			&init.name);
+	ret = of_property_read_string_index(dev->of_node, "clock-output-names",
+					    0, &init.name);
+	if (ret) {
+		dev_err(dev, "unable to find output name\n");
+		return ret;
+	}
 
 	priv->clkout = devm_clk_register(dev, &priv->clkout_hw);
 	if (IS_ERR(priv->clkout)) {
@@ -158,7 +162,7 @@ static int sx125x_register_clock_provider(struct sx125x_priv *priv)
 		return PTR_ERR(priv->clkout);
 	}
 	ret = of_clk_add_hw_provider(dev->of_node, of_clk_hw_simple_get,
-			&priv->clkout_hw);
+				     &priv->clkout_hw);
 	return ret;
 }
 
@@ -180,8 +184,8 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 		const struct reg_field *reg_fields = sx125x_regmap_fields;
 
 		priv->regmap_fields[i] = devm_regmap_field_alloc(dev,
-				priv->regmap,
-				reg_fields[i]);
+								 priv->regmap,
+								 reg_fields[i]);
 		if (IS_ERR(priv->regmap_fields[i])) {
 			ret = PTR_ERR(priv->regmap_fields[i]);
 			dev_err(dev, "Cannot allocate regmap field: %d\n", ret);
