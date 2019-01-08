@@ -15,7 +15,9 @@ description: |
   demodulating LoRa signals on 8 channels simultaneously.
 
   It is typically paired with two SX125x IQ radios controlled over an
-  SPI directly from the concentrator.
+  SPI directly from the concentrator. One of the radios will provide
+  a 32 MHz clock back into the concentrator.
+  The concentrator also outputs a 32 MHz clock to the radio(s) in the TX chain.
 
   The concentrator itself is controlled over SPI.
 
@@ -36,6 +38,30 @@ properties:
   reset-gpios:
     maxItems: 1
     description: A connection of the reset gpio line.
+
+  clocks:
+    maxItems: 2
+    items:
+      - description: 32 MHz clock provider (CLK32M)
+      - description: 133 MHz high speed clock provider (CLKHS)
+    description: The chip requires two clock inputs; A 32MHz clock at CMOS
+      level which is provided from a connected radio.
+      And a 133MHz high speed clock at CMOS level provided by an oscillator.
+
+  clock-names:
+    items:
+      - const: clk32m
+      - const: clkhs
+    description: Input clock (CLK32M) name from provider, Input clock (CLKHS)
+      name from provider.
+
+  clock-output-names:
+    items:
+      - const: sp_clk_out
+    description: Output clock (SP_CLK_OUT) typically connected to the TX radio.
+
+  '#clock-cells':
+    const: 0
 
   semtech,power-lut:
     description: Power lookup table for the concentrator.
@@ -94,6 +120,20 @@ examples:
 
     #include <dt-bindings/gpio/gpio.h>
 
+    tcxo: dummy32m {
+      compatible = "fixed-clock";
+      clock-frequency = <32000000>;
+      clock-output-names = "tcxo";
+      #clock-cells = <0>;
+    };
+
+    clkhs: dummy133m {
+      compatible = "fixed-clock";
+      clock-frequency = <133000000>;
+      clock-output-names = "clkhs";
+      #clock-cells = <0>;
+    };
+
     spi {
       #address-cells = <1>;
       #size-cells = <0>;
@@ -103,6 +143,10 @@ examples:
         reg = <0>;
         reset-gpios = <&pioB 27 GPIO_ACTIVE_HIGH>;
         spi-max-frequency = <8000000>;
+        clocks = <&radio1>, <&clkhs>;
+        clock-names = "clk32m", "clkhs";
+        clock-output-names = "sp_clk_out";
+        #clock-cells = <0>;
 
         semtech,power-lut = /bits/ 8 < 0xFD 0 0 3  9 >,
                             /bits/ 8 <    3 0 0 3 12 >,
@@ -115,11 +159,17 @@ examples:
           radio0: radio@0 {
             compatible = "semtech,sx1257";
             reg = <0>;
+            clocks = <&tcxo>, <&concentrator0>;
+            clock-names = "fxosc", "fclk_in";
           };
 
           radio1: radio@1 {
             compatible = "semtech,sx1257";
             reg = <1>;
+            clocks = <&tcxo>;
+            clock-names = "fxosc";
+            clock-output-names = "fclk_out";
+            #clock-cells = <0>;
           };
         };
       };
