@@ -27,12 +27,47 @@ properties:
     description: The chip select on the SPI bus or radio number in concentrator
       , with radio A = 0 and radio B = 1.
 
+  clocks:
+    minItems: 1
+    maxItems: 2
+    items:
+      - description: 32 MHz to 36 MHz clock provider (FXOSC)
+      - description: 32 MHz to 36 MHz TX clock privider (FCLK_IN)
+    description: Input clock (FXOSC) provider with output ranging from 32 MHz
+      to 36 MHz. TX synthesizer or DAC input clock (FCLK_IN) provider with
+      output ranging from 32 MHz to 36 MHz.
+
+  clock-names:
+    minItems: 1
+    maxItems: 2
+    items:
+      - const: fxosc
+      - const: fclk_in
+    description: Input clock (FXOSC), TX synthesizer or DAC input clock
+      (FCLK_IN)
+
+  clock-output-names:
+    items:
+      - const: fclk_out
+    description: Output clock (FCLK_OUT) name, clock is gated version of the
+      input (FXOSC). Used in master mode operation.
+
+  '#clock-cells':
+    const: 0
+
 required:
   - compatible
   - reg
 
 examples:
   - |
+    tcxo: dummy32m {
+      compatible = "fixed-clock";
+      clock-frequency = <32000000>;
+      clock-output-names = "tcxo";
+      #clock-cells = <0>;
+    };
+
     spi {
       #address-cells = <1>;
       #size-cells = <0>;
@@ -40,5 +75,9 @@ examples:
       radio0: radio@0 {
         compatible = "semtech,sx1257";
         reg = <0>;
+        clocks = <&tcxo>;
+        clock-names = "fxosc";
+        clock-output-names = "fclk_out";
+        #clock-cells = <0>;
       };
     };
