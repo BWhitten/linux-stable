@@ -10,6 +10,24 @@
 #include <linux/types.h>
 #include <linux/socket.h>
 
+/* TX addressing definition */
+struct tx_addr {
+	u64 freq;
+	u8 sf;
+	u8 cr;
+	u16 bw;
+
+	u8 sync;
+
+	s8 power;
+}
+
+/* RX addressing definition */
+struct rx_addr {
+	u64 freq;
+	u16 bw;
+}
+
 /* particular protocols of the protocol family PF_LORA */
 #define LORA_PROTO_DATAGRAM	0
 #define LORA_NPROTO		1
@@ -17,7 +35,10 @@
 struct sockaddr_lora {
 	__kernel_sa_family_t lora_family;
 	int lora_ifindex;
+	u8 lora_protocol;
 	union {
+		struct tx_addr	tx;
+		struct rx_addr	rx;
 	} lora_addr;
 };
 

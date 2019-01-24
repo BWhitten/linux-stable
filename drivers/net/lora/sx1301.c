@@ -20,6 +20,7 @@
 #include <linux/of_gpio.h>
 #include <linux/regmap.h>
 #include <linux/lora/dev.h>
+#include <linux/lora/skb.h>
 #include <linux/spi/spi.h>
 
 #include "sx1301.h"
@@ -27,7 +28,7 @@
 struct sx1301_tx_header {
 	u8	tx_freq[3];
 	u32	start;
-	u8  tx_power:4,
+	u8	tx_power:4,
 		modulation_type:1,
 		radio_select:1,
 		resered0:2;
@@ -636,11 +637,13 @@ static int sx1301_load_tx_gain_lut(struct sx1301_priv *priv)
 	return ret;
 };
 
-static int sx1301_tx(struct sx1301_priv *priv, struct lora_frame *frame)
+static int sx1301_tx(struct sx1301_priv *priv, struct sk_buff *skb)
 {
 	int ret, i;
 	u8 buff[256 + 16];
 	struct sx1301_tx_header *hdr = (struct sx1301_tx_header *)buff;
+	u8 sf;
+	u16 bw;
 
 	/* TODO general checks to make sure we CAN send */
 
@@ -661,7 +664,7 @@ static int sx1301_tx(struct sx1301_priv *priv, struct lora_frame *frame)
 	/* HACK set to 868MHz */
 	hdr->tx_freq[0] = 217;
 	hdr->tx_freq[1] = 0;
-	hdr->tx_freq[3] = 0;
+	hdr->tx_freq[2] = 0;
 
 	hdr->start = 0; /* Start imediatly */
 	hdr->radio_select = 0; /* HACK Radio A transmit */
@@ -670,60 +673,40 @@ static int sx1301_tx(struct sx1301_priv *priv, struct lora_frame *frame)
 
 	hdr->u.lora.crc16_en = 1; /* Enable CRC16 */
 
-	switch (frame->cr) {
-	case LORA_CR_4_5:
+	switch (lora_skb_prv(skb)->cr) {
+	case 5:
 		hdr->u.lora.cr = 1; /* CR 4/5 */
 		break;
-	case LORA_CR_4_6:
+	case 6:
 		hdr->u.lora.cr = 2; /* CR 4/6 */
 		break;
-	case LORA_CR_4_7:
+	case 7:
 		hdr->u.lora.cr = 3; /* CR 4/7 */
 		break;
-	case LORA_CR_4_8:
+	case 8:
 		hdr->u.lora.cr = 4; /* CR 4/8 */
 		break;
 	default:
 		return -ENXIO;
 	}
 
-	switch (frame->sf) {
-	case LORA_SF_6:
-		hdr->u.lora.sf = 6; /* SF6 */
-		break;
-	case LORA_SF_7:
-		hdr->u.lora.sf = 7; /* SF7 */
-		break;
-	case LORA_SF_8:
-		hdr->u.lora.sf = 8; /* SF8 */
-		break;
-	case LORA_SF_9:
-		hdr->u.lora.sf = 9; /* SF9 */
-		break;
-	case LORA_SF_10:
-		hdr->u.lora.sf = 10; /* SF10 */
-		break;
-	case LORA_SF_11:
-		hdr->u.lora.sf = 11; /* SF11 */
-		break;
-	case LORA_SF_12:
-		hdr->u.lora.sf = 12; /* SF12 */
-		break;
-	default:
+	sf = lora_skb_prv(skb)->sf
+	if ((sf < 6) || (sf > 12))
 		return -ENXIO;
-	}
 
-	hdr->u.lora.payload_len = frame->len; /* Set the data length */
+	hdr->u.lora.sf = sf;
+
+	hdr->u.lora.payload_len = skb->len; /* Set the data length */
 	hdr->u.lora.implicit_header = 0; /* No implicit header */
 
-	switch (frame->bw) {
-	case LORA_BW_125KHZ:
+	switch(lora_skb_prv(skb)->bw) {
+	case 125:
 		hdr->u.lora.mod_bw = 0; /* 125KHz BW */
 		break;
-	case LORA_BW_250KHZ:
+	case 250:
 		hdr->u.lora.mod_bw = 1; /* 250KHz BW */
 		break;
-	case LORA_BW_500KHZ:
+	case 500:
 		hdr->u.lora.mod_bw = 2; /* 500KHz BW */
 		break;
 	default:
@@ -740,7 +723,7 @@ static int sx1301_tx(struct sx1301_priv *priv, struct lora_frame *frame)
 
 	/* Copy the TX data into the buffer ready to go */
 
-	memcpy((void *)&buff[16], frame->data, frame->len);
+	memcpy((void *)&buff[16], skb->data, skb->len);
 
 	/* Reset any transmissions */
 	ret = regmap_write(priv->regmap, SX1301_TX_TRIG, 0);
@@ -791,18 +774,17 @@ static void sx1301_tx_work_handler(struct work_struct *ws)
 	struct sx1301_priv *priv = container_of(ws, struct sx1301_priv,
 						tx_work);
 	struct net_device *netdev = dev_get_drvdata(priv->dev);
-	struct lora_frame *frame = (struct lora_frame *)priv->tx_skb->data;
 	int ret;
 
 	netdev_dbg(netdev, "%s\n", __func__);
 
 	if (priv->tx_skb) {
-		ret = sx1301_tx(priv, frame);
+		ret = sx1301_tx(priv, priv->tx_skb);
 		if (ret) {
 			netdev->stats.tx_errors++;
 		} else {
 			netdev->stats.tx_packets++;
-			netdev->stats.tx_bytes += frame->len;
+			netdev->stats.tx_bytes += priv->tx_skb->len;
 		}
 
 		if (!(netdev->flags & IFF_ECHO) ||

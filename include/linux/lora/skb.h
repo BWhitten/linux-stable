@@ -12,6 +12,12 @@
 
 struct lora_skb_priv {
 	int ifindex;
+
+	u64 freq;
+	u8 sf;
+	u8 cr;
+	u16 bw;
+	s8 power;
 };
 
 static inline struct lora_skb_priv *lora_skb_prv(struct sk_buff *skb)

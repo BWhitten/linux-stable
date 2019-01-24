@@ -118,6 +118,13 @@ static int dgram_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 
 	lora_skb_reserve(skb);
 	lora_skb_prv(skb)->ifindex = netdev->ifindex;
+	lora_skb_prv(skb)->freq = addr->freq;
+	lora_skb_prv(skb)->sf = addr->sf;
+	lora_skb_prv(skb)->cr = addr->cr;
+	lora_skb_prv(skb)->bw = addr->bw;
+	lora_skb_prv(skb)->sync = addr->sync;
+	lora_skb_prv(skb)->power = addr->power;
+
 
 	ret = memcpy_from_msg(skb_put(skb, size), msg, size);
 	if (ret < 0)
