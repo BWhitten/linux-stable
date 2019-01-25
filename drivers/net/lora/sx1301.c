@@ -643,7 +643,6 @@ static int sx1301_tx(struct sx1301_priv *priv, struct sk_buff *skb)
 	u8 buff[256 + 16];
 	struct sx1301_tx_header *hdr = (struct sx1301_tx_header *)buff;
 	u8 sf;
-	u16 bw;
 
 	/* TODO general checks to make sure we CAN send */
 
@@ -690,7 +689,7 @@ static int sx1301_tx(struct sx1301_priv *priv, struct sk_buff *skb)
 		return -ENXIO;
 	}
 
-	sf = lora_skb_prv(skb)->sf
+	sf = lora_skb_prv(skb)->sf;
 	if ((sf < 6) || (sf > 12))
 		return -ENXIO;
 
@@ -735,7 +734,7 @@ static int sx1301_tx(struct sx1301_priv *priv, struct sk_buff *skb)
 	if (ret)
 		return ret;
 	ret = regmap_noinc_write(priv->regmap, SX1301_TX_DATA_BUF_DATA, buff,
-				 frame->len + 16);
+				 skb->len + 16);
 	if (ret)
 		return ret;
 
@@ -744,8 +743,8 @@ static int sx1301_tx(struct sx1301_priv *priv, struct sk_buff *skb)
 	if (ret)
 		return ret;
 
-	dev_dbg(priv->dev, "Transmitting packet of size %d: ", frame->len);
-	for (i = 0; i < frame->len + 16; i++)
+	dev_dbg(priv->dev, "Transmitting packet of size %d: ", skb->len);
+	for (i = 0; i < skb->len + 16; i++)
 		dev_dbg(priv->dev, "%X", buff[i]);
 
 	return ret;

@@ -17,6 +17,9 @@ struct lora_skb_priv {
 	u8 sf;
 	u8 cr;
 	u16 bw;
+
+	u8 sync;
+
 	s8 power;
 };
 
