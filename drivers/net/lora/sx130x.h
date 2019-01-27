@@ -18,6 +18,8 @@
 #define SX1301_MCU_AGC_FW_VERSION 4
 #define SX1301_MCU_AGC_CAL_FW_VERSION 2
 
+#define SX1301_TX_GAIN_LUT_MAX 16
+
 /* Page independent */
 #define SX1301_PAGE     0x00
 #define SX1301_VER      0x01

@@ -51,6 +51,14 @@ static const struct reg_field sx130x_regmap_fields[] = {
 		REG_FIELD(SX1301_EMERGENCY_FORCE_HOST_CTRL, 0, 0),
 };
 
+struct sx130x_tx_gain_lut {
+	s8 power;	/* dBm measured at board connector */
+	u8 dig_gain;
+	u8 pa_gain;
+	u8 dac_gain;
+	u8 mix_gain;
+};
+
 struct sx130x_priv {
 	struct lora_dev_priv	lora;
 	struct device		*dev;
@@ -59,6 +67,8 @@ struct sx130x_priv {
 	struct regmap_field	*regmap_fields[ARRAY_SIZE(sx130x_regmap_fields)];
 	struct mutex		io_lock;
 	void			*drvdata;
+	struct sx130x_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];
+	u8 tx_gain_lut_size;
 };
 
 struct regmap *sx130x_get_regmap(struct device *dev)
@@ -593,6 +603,8 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 	struct device *dev = regmap_get_device(regmap);
 	struct net_device *netdev;
 	struct sx130x_priv *priv;
+	u8 tmp[5 * SX1301_TX_GAIN_LUT_MAX];
+	u8 *power_lut;
 	int ret;
 	int i;
 
@@ -624,6 +636,31 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 			return ret;
 		}
 	}
+
+	if (IS_ENABLED(CONFIG_OF)) {
+		ret = of_property_read_variable_u8_array(dev->of_node, "semtech,power-lut",
+							 tmp, 5, 5 * SX1301_TX_GAIN_LUT_MAX);
+		if (ret < 0) {
+			dev_err(dev, "No power table found (%d)\n", ret);
+			return -EINVAL;
+		}
+
+		if (ret % 5) {
+			dev_err(dev, "Invalid power table\n");
+			return -EINVAL;
+		} else {
+			priv->tx_gain_lut_size = ret / 5;
+			power_lut = tmp;
+			for (i = 0; i < priv->tx_gain_lut_size; i++) {
+				priv->tx_gain_lut[i].power = *(power_lut++);
+				priv->tx_gain_lut[i].dig_gain = *(power_lut++);
+				priv->tx_gain_lut[i].pa_gain = *(power_lut++) & 0x03;
+				priv->tx_gain_lut[i].dac_gain = *(power_lut++) & 0x03;
+				priv->tx_gain_lut[i].mix_gain = *(power_lut++) & 0x0F;
+			}
+		}
+	}
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(sx130x_early_probe);
