@@ -541,6 +541,111 @@ static int sx130x_load_all_firmware(struct sx130x_priv *priv)
 	return 0;
 }
 
+static int sx130x_load_tx_gain_lut(struct sx130x_priv *priv)
+{
+	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	struct sx130x_tx_gain_lut *lut = priv->tx_gain_lut;
+	unsigned int status, val;
+	int ret, i;
+
+	for (i = 0; i < priv->tx_gain_lut_size; i++) {
+		val = lut->pa_gain << SX1301_PA_GAIN_OFFSET;
+		val |= lut->dac_gain << SX1301_DAC_GAIN_OFFSET;
+		val |= lut->mix_gain;
+
+		netdev_info(netdev, "AGC LUT entry %d dBm: 0x%02x\n", lut->power, val);
+		ret = sx130x_agc_transaction(priv, val, &status);
+		if (ret) {
+			netdev_err(netdev, "AGC LUT load failed\n");
+			return ret;
+		}
+		if (status != (SX1301_AGC_STATUS_SUCCESS | i)) {
+			netdev_err(netdev, "AGC firmware LUT init error: 0x%02x", status);
+			return -ENXIO;
+		}
+		lut++;
+	}
+
+	/* Abort the transaction if there are less then 16 entries */
+	if (priv->tx_gain_lut_size < SX1301_TX_GAIN_LUT_MAX) {
+		ret = sx130x_agc_transaction(priv, SX1301_AGC_CMD_ABORT, &status);
+		if (ret) {
+			netdev_err(netdev, "AGC LUT abort failed\n");
+			return ret;
+		}
+		if (status != SX1301_AGC_STATUS_SUCCESS) {
+			netdev_err(netdev, "AGC firmware LUT abort error: 0x%02x", status);
+			return -ENXIO;
+		}
+	}
+
+	return ret;
+};
+
+static int sx130x_agc_init(struct sx130x_priv *priv)
+{
+	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	unsigned int tx_msb;
+	unsigned int val;
+	int ret;
+
+	ret = regmap_read(priv->regmap, SX1301_AGCSTS, &val);
+	if (ret) {
+		netdev_err(netdev, "AGC status read failed\n");
+		return ret;
+	}
+	if (val != SX1301_AGC_STATUS_READY) {
+		netdev_err(netdev, "AGC firmware init failure: 0x%02x\n", val);
+		return -ENXIO;
+	}
+
+	ret = sx130x_load_tx_gain_lut(priv);
+	if (ret)
+		return ret;
+
+	/*
+	 * Load Tx freq MSBs
+	 * Always 3 if f > 768 for SX1257 and SX1258 or f > 384 for SX1255
+	 */
+	tx_msb = 3; /* TODO detect radio type */
+
+	ret = sx130x_agc_transaction(priv, tx_msb, &val);
+	if (ret) {
+		netdev_err(netdev, "AGC Tx MSBs load failed\n");
+		return ret;
+	}
+	if (val != (SX1301_AGC_STATUS_SUCCESS | tx_msb)) {
+		netdev_err(netdev, "AGC firmware Tx MSBs error: 0x%02x", val);
+		return -ENXIO;
+	}
+
+	/* Load chan_select firmware option */
+	ret = sx130x_agc_transaction(priv, 0, &val);
+	if (ret) {
+		netdev_err(netdev, "AGC chan select failed\n");
+		return ret;
+	}
+	if (val != (SX1301_AGC_STATUS_SUCCESS | 0)) {
+		netdev_err(netdev, "AGC firmware chan select error: 0x%02x", val);
+		return -ENXIO;
+	}
+
+	/* End AGC firmware init and check status */
+	/* TODO load the intended value of radio_select here
+	 * LORA IF mapping to radio A/B (per bit, 0=A, 1=B) */
+	ret = sx130x_agc_transaction(priv, 0x07, &val);
+	if (ret) {
+		netdev_err(netdev, "AGC radio select failed\n");
+		return ret;
+	}
+	if (val != SX1301_AGC_STATUS_INITIALISED) {
+		netdev_err(netdev, "AGC firmware init error: 0x%02x", val);
+		return -ENXIO;
+	}
+
+	return ret;
+}
+
 static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
 	if (skb->protocol != htons(ETH_P_LORA)) {
@@ -590,6 +695,11 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	/* TODO */
 
 	ret = sx130x_load_all_firmware(priv);
+	if (ret)
+		goto err_firmware;
+
+	usleep_range(1000, 2000);
+	ret = sx130x_agc_init(priv);
 	if (ret)
 		goto err_firmware;
 
