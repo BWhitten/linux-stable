@@ -693,8 +693,21 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	if (ret)
 		goto err_calibrate;
 
-	/* TODO */
+	/* TODO Load constant adjustments, patches */
 
+	/* TODO Frequency time drift */
+
+	/* TODO Configure lora multi demods, bitfield of active */
+
+	/* TODO Load concentrator multi channel frequencies */
+
+	/* TODO enable the correlator on enabled frequencies */
+
+	/* TODO PPM, and modem enable */
+
+	/* TODO turn on IF8 */
+
+	/* TODO turn on FSK IF9 */
 	ret = sx130x_load_all_firmware(priv);
 	if (ret)
 		goto err_firmware;
