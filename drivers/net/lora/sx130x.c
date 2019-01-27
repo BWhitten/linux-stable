@@ -341,6 +341,34 @@ static int sx130x_load_firmware(struct sx130x_priv *priv, int mcu, const struct 
 	return 0;
 }
 
+static int sx130x_agc_transaction(struct sx130x_priv *priv, unsigned int val,
+				  unsigned int *status)
+{
+	int ret;
+
+	ret = regmap_write(priv->regmap, SX1301_CHRS, SX1301_AGC_CMD_WAIT);
+	if (ret) {
+		dev_err(priv->dev, "AGC transaction start failed\n");
+		return ret;
+	}
+	usleep_range(1000, 2000);
+
+	ret = regmap_write(priv->regmap, SX1301_CHRS, val);
+	if (ret) {
+		dev_err(priv->dev, "AGC transaction value failed\n");
+		return ret;
+	}
+	usleep_range(1000, 2000);
+
+	ret = regmap_read(priv->regmap, SX1301_AGCSTS, status);
+	if (ret) {
+		dev_err(priv->dev, "AGC status read failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 {
 	const struct firmware *fw;
