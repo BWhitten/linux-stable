@@ -37,6 +37,30 @@ properties:
     maxItems: 1
     description: A connection of the reset gpio line.
 
+  semtech,power-lut:
+    description: Power lookup table for the concentrator.
+    minItems: 1
+    maxItems: 16
+    allOf:
+      - $ref: "/schemas/types.yaml#/definitions/int8-matrix"
+      - items:
+          items:
+            - description: Power in dBm measured at the rf connector.
+              minimum: 0
+              maximum: 3
+            - description: Digital gain.
+              minimum: 0
+              maximum: 3
+            - description: PA gain.
+              minimum: 0
+              maximum: 3
+            - description: DAC gain.
+              minimum: 0
+              maximum: 3
+            - description: Mixer gain.
+              minimum: 0
+              maximum: 15
+
   radio-spi:
     type: object
     description: The concentrator can have two radios connected which are
@@ -82,6 +106,10 @@ examples:
         reg = <0>;
         reset-gpios = <&pioB 27 GPIO_ACTIVE_HIGH>;
         spi-max-frequency = <8000000>;
+
+        semtech,power-lut = [ 00 00 00 03 09
+                              03 00 00 03 0C
+                              04 00 00 03 0D ];
 
         radio-spi {
           #address-cells = <1>;
