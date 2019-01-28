@@ -26,6 +26,63 @@
 
 #include "sx130x.h"
 
+struct sx130x_fields_sequence {
+	enum sx130x_fields field;
+	u8 val;
+};
+
+static const struct sx130x_fields_sequence sx130x_regmap_fields_patch[] = {
+	/* I/Q path setup */
+	{F_RSSI_BB_FILTER_ALPHA,	6},
+	{F_RSSI_DEC_FILTER_ALPHA,	7},
+	{F_RSSI_CHANN_FILTER_ALPHA,	7},
+	{F_RSSI_BB_DEFAULT_VALUE,	23},
+	{F_RSSI_DEC_DEFAULT_VALUE,	66},
+	{F_RSSI_CHANN_DEFAULT_VALUE,	85},
+	{F_DEC_GAIN_OFFSET,		7},
+	{F_CHAN_GAIN_OFFSET,		6},
+
+	/* LoRa 'multi' demodulator setup */
+	{F_SNR_AVG_CST,			3},
+	{F_FRAME_SYNCH_PEAK1_POS,	3}, // Public LoRa network
+	{F_FRAME_SYNCH_PEAK2_POS,	4}, // Public LoRa network
+
+	/* LoRa standalone 'MBWSSF' demodulator setup */
+	{F_MBWSSF_FRAME_SYNCH_PEAK1_POS, 3}, // Public LoRa network
+	{F_MBWSSF_FRAME_SYNCH_PEAK2_POS, 4}, // Public LoRa network
+
+	/* Improvement of ref clock freq error tolerance */
+	{F_ADJUST_MODEM_START_OFFSET_RDX4L, 1},
+	{F_ADJUST_MODEM_START_OFFSET_SF12_RDX4L, (4094 & 0xFF)},
+	{F_ADJUST_MODEM_START_OFFSET_SF12_RDX4H, (4094 >> 8)},
+	{F_CORR_MAC_GAIN,		7},
+
+	/* FSK datapath setup */
+	{F_FSK_RX_INVERT,		1},
+	{F_FSK_MODEM_INVERT_IQ,		1},
+
+	/* FSK demodulator setup */
+	{F_FSK_RSSI_LENGTH,		4},
+	{F_FSK_PKT_MODE,		1},
+	{F_FSK_CRC_EN,			1},
+	{F_FSK_DCFREE_ENC,		2},
+	{F_FSK_ERROR_OSR_TOL,		10},
+	{F_FSK_PKT_LENGTH,		255},
+	{F_FSK_PATTERN_TIMEOUT_CFGL,	128},
+
+	/* TX general parameters */
+	{F_TX_START_DELAYL, (TX_START_DELAY_DEFAULT & 0xFF)},
+	{F_TX_START_DELAYH, (TX_START_DELAY_DEFAULT >> 8)},
+
+	/* TX LoRa */
+	{F_TX_SWAP_IQ,			1},
+	{F_TX_FRAME_SYNCH_PEAK1_POS,	3}, // Public LoRa network
+	{F_TX_FRAME_SYNCH_PEAK2_POS,	4}, // Public LoRa network
+
+	/* TX FSK */
+	{F_FSK_TX_GAUSSIAN_SELECT_BT,	2},
+};
+
 static const struct reg_field sx130x_regmap_fields[] = {
 	/* PAGE */
 	[F_SOFT_RESET]          = REG_FIELD(SX1301_PAGE, 7, 7),
@@ -49,6 +106,59 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	/* EMERGENCY_FORCE_HOST_CTRL */
 	[F_EMERGENCY_FORCE_HOST_CTRL] =
 		REG_FIELD(SX1301_EMERGENCY_FORCE_HOST_CTRL, 0, 0),
+
+	/* RSSI_X_FILTER_ALPHA */
+	[F_RSSI_BB_FILTER_ALPHA] = REG_FIELD(SX1301_RSSI_BB_FILTER_ALPHA, 0, 4),
+	[F_RSSI_DEC_FILTER_ALPHA] = REG_FIELD(SX1301_RSSI_DEC_FILTER_ALPHA, 0, 4),
+	[F_RSSI_CHANN_FILTER_ALPHA]	= REG_FIELD(SX1301_RSSI_CHANN_FILTER_ALPHA, 0, 4),
+	/* RSSI_X_DEFAULT_VALUE */
+	[F_RSSI_BB_DEFAULT_VALUE] = REG_FIELD(SX1301_RSSI_BB_DEFAULT_VALUE, 0, 7),
+	[F_RSSI_DEC_DEFAULT_VALUE] = REG_FIELD(SX1301_RSSI_DEC_DEFAULT_VALUE, 0, 7),
+	[F_RSSI_CHANN_DEFAULT_VALUE] = REG_FIELD(SX1301_RSSI_CHANN_DEFAULT_VALUE, 0, 7),
+	/* GAIN_OFFSET */
+	[F_DEC_GAIN_OFFSET]	= REG_FIELD(SX1301_GAIN_OFFSET, 0, 3),
+	[F_CHAN_GAIN_OFFSET]	= REG_FIELD(SX1301_GAIN_OFFSET, 4, 7),
+
+	[F_SNR_AVG_CST] = REG_FIELD(SX1301_MISC_CFG1, 4, 5),
+	[F_FRAME_SYNCH_PEAK1_POS] = REG_FIELD(SX1301_FRAME_SYNCH, 0, 3),
+	[F_FRAME_SYNCH_PEAK2_POS] = REG_FIELD(SX1301_FRAME_SYNCH, 4, 7),
+
+	[F_MBWSSF_FRAME_SYNCH_PEAK1_POS] = REG_FIELD(SX1301_BHSYNCPOS, 0, 3),
+	[F_MBWSSF_FRAME_SYNCH_PEAK2_POS] = REG_FIELD(SX1301_BHSYNCPOS, 4, 7),
+
+	[F_ADJUST_MODEM_START_OFFSET_RDX4L] =
+		REG_FIELD(SX1301_MODEM_START_RDX4L, 0, 7),  // 12 bits
+	[F_ADJUST_MODEM_START_OFFSET_RDX4H] =
+		REG_FIELD(SX1301_MODEM_START_RDX4H, 0, 3),
+	[F_ADJUST_MODEM_START_OFFSET_SF12_RDX4L] =
+		REG_FIELD(SX1301_MODEM_START_SF12_RDX4L, 0, 7), // 12 bits
+	[F_ADJUST_MODEM_START_OFFSET_SF12_RDX4H] =
+		REG_FIELD(SX1301_MODEM_START_SF12_RDX4H, 0, 3),
+	[F_CORR_MAC_GAIN] = REG_FIELD(SX1301_CORR_CFG, 4, 6),
+
+	[F_FSK_RSSI_LENGTH] = REG_FIELD(SX1301_FSK_CFG1, 3, 5),
+	[F_FSK_RX_INVERT] = REG_FIELD(SX1301_FSK_CFG1, 6, 6),
+	[F_FSK_PKT_MODE] = REG_FIELD(SX1301_FSK_CFG1, 7, 7),
+
+	[F_FSK_MODEM_INVERT_IQ] = REG_FIELD(SX1301_IQCFG, 5, 5),
+
+	[F_FSK_CRC_EN] = REG_FIELD(SX1301_FSK_CFG2, 3, 3),
+	[F_FSK_DCFREE_ENC] = REG_FIELD(SX1301_FSK_CFG2, 4, 5),
+	[F_FSK_ERROR_OSR_TOL] = REG_FIELD(SX1301_FSK_ERROR_OSR_TOL, 0, 4),
+	[F_FSK_PKT_LENGTH] = REG_FIELD(SX1301_FSK_PKT_LENGTH, 0, 7),
+	[F_FSK_PATTERN_TIMEOUT_CFGL] =
+		REG_FIELD(SX1301_FSK_PATTERN_TIMEOUT_CFGL, 0, 7),  // 10 bits
+	[F_FSK_PATTERN_TIMEOUT_CFGH] =
+		REG_FIELD(SX1301_FSK_PATTERN_TIMEOUT_CFGH, 0, 1),
+
+	[F_TX_START_DELAYL] = REG_FIELD(SX1301_TX_START_DELAYL, 0, 7), // 16 bit
+	[F_TX_START_DELAYH] = REG_FIELD(SX1301_TX_START_DELAYH, 0, 7),
+
+	[F_TX_SWAP_IQ] = REG_FIELD(SX1301_TX_CFG2, 7, 7),
+	[F_TX_FRAME_SYNCH_PEAK1_POS] = REG_FIELD(SX1301_TX_FRAME_SYNCH, 0, 3),
+	[F_TX_FRAME_SYNCH_PEAK2_POS] = REG_FIELD(SX1301_TX_FRAME_SYNCH, 4, 7),
+
+	[F_FSK_TX_GAUSSIAN_SELECT_BT] = REG_FIELD(SX1301_FSK_TX, 1, 2),
 };
 
 struct sx130x_tx_gain_lut {
@@ -215,6 +325,23 @@ static int sx130x_soft_reset(struct sx130x_priv *priv)
 		return regcache_drop_region(priv->regmap,
 			0, sx130x_regmap_config.max_register);
 	return 0;
+}
+
+static int sx130x_fields_patch(struct sx130x_priv *priv)
+{
+	int i, ret;
+
+	for (i = 0; i < ARRAY_SIZE(sx130x_regmap_fields_patch); i++) {
+		ret = sx130x_field_force_write(priv, sx130x_regmap_fields_patch[i].field,
+					       sx130x_regmap_fields_patch[i].val);
+		if (ret) {
+			dev_err(priv->dev,
+				"Failed to patch regmap field: %d\n", i);
+			break;
+		}
+	}
+
+	return ret;
 }
 
 static int sx130x_agc_ram_read(struct sx130x_priv *priv, u8 addr, unsigned int *val)
@@ -693,7 +820,9 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	if (ret)
 		goto err_calibrate;
 
-	/* TODO Load constant adjustments, patches */
+	ret = sx130x_fields_patch(priv);
+	if (ret)
+		goto err_patch;
 
 	/* TODO Frequency time drift */
 
@@ -729,6 +858,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 
 err_open:
 err_firmware:
+err_patch:
 err_calibrate:
 err_reg:
 	mutex_unlock(&priv->io_lock);
