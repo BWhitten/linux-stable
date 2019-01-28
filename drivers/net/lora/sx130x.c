@@ -22,6 +22,7 @@
 #include <linux/slab.h>
 #include <linux/gpio/consumer.h>
 #include <linux/lora/dev.h>
+#include <linux/lora/skb.h>
 #include <linux/spi/spi.h>
 
 #include "sx130x.h"
@@ -846,12 +847,13 @@ static int sx130x_agc_init(struct sx130x_priv *priv)
 	return ret;
 }
 
-static int sx130x_tx(struct sx130x_priv *priv, void *data, int len)
+static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 {
 	int ret, i;
 	u8 buff[256 + 16];
 	struct sx130x_tx_header *hdr = (struct sx130x_tx_header *)buff;
 	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	u8 sf;
 
 	/* TODO general checks to make sure we CAN send */
 
@@ -880,11 +882,47 @@ static int sx130x_tx(struct sx130x_priv *priv, void *data, int len)
 	hdr->tx_power = 15; /* HACK power entry 15 */
 
 	hdr->u.lora.crc16_en = 1; /* Enable CRC16 */
-	hdr->u.lora.cr = 1; /* CR 4/5 */
-	hdr->u.lora.sf = 7; /* SF7 */
-	hdr->u.lora.payload_len = len; /* Set the data len to the skb len */
+
+	switch (lora_skb_prv(skb)->cr) {
+	case 5:
+		hdr->u.lora.cr = 1; /* CR 4/5 */
+		break;
+	case 6:
+		hdr->u.lora.cr = 2; /* CR 4/6 */
+		break;
+	case 7:
+		hdr->u.lora.cr = 3; /* CR 4/7 */
+		break;
+	case 8:
+		hdr->u.lora.cr = 4; /* CR 4/8 */
+		break;
+	default:
+		return -ENXIO;
+	}
+
+	sf = lora_skb_prv(skb)->sf;
+	if ((sf < 6) || (sf > 12))
+		return -ENXIO;
+
+	hdr->u.lora.sf = sf;
+
+	hdr->u.lora.payload_len = skb->len; /* Set the data length */
 	hdr->u.lora.implicit_header = 0; /* No implicit header */
-	hdr->u.lora.mod_bw = 0; /* Set 125KHz BW */
+
+	switch(lora_skb_prv(skb)->bw) {
+	case 125:
+		hdr->u.lora.mod_bw = 0; /* 125KHz BW */
+		break;
+	case 250:
+		hdr->u.lora.mod_bw = 1; /* 250KHz BW */
+		break;
+	case 500:
+		hdr->u.lora.mod_bw = 2; /* 500KHz BW */
+		break;
+	default:
+		return -ENXIO;
+	}
+
 	hdr->u.lora.ppm_offset = 0; /* TODO no ppm offset? */
 	hdr->u.lora.invert_pol = 0; /* TODO set no inverted polarity */
 
@@ -895,7 +933,7 @@ static int sx130x_tx(struct sx130x_priv *priv, void *data, int len)
 
 	/* Copy the TX data into the buffer ready to go */
 
-	memcpy((void *)&buff[16], data, len);
+	memcpy((void *)&buff[16], skb->data, skb->len);
 
 	mutex_lock(&priv->io_lock);
 
@@ -910,7 +948,7 @@ static int sx130x_tx(struct sx130x_priv *priv, void *data, int len)
 		goto err_unlock;
 
 	ret = regmap_noinc_write(priv->regmap, SX1301_TX_DATA_BUF_DATA, buff,
-				 len + 16);
+				 skb->len + 16);
 	if (ret)
 		goto err_unlock;
 
@@ -919,8 +957,8 @@ static int sx130x_tx(struct sx130x_priv *priv, void *data, int len)
 	if (ret)
 		goto err_unlock;
 
-	netdev_dbg(netdev, "Transmitting packet of size %d: ", len);
-	for (i = 0; i < len + 16; i++)
+	netdev_dbg(netdev, "Transmitting packet of size %d: ", skb->len);
+	for (i = 0; i < skb->len + 16; i++)
 		netdev_dbg(netdev, "%X", buff[i]);
 
 err_unlock:
@@ -955,7 +993,7 @@ static void sx130x_tx_work_handler(struct work_struct *ws)
 	netdev_dbg(netdev, "%s\n", __func__);
 
 	if (priv->tx_skb) {
-		ret = sx130x_tx(priv, priv->tx_skb->data, priv->tx_skb->len);
+		ret = sx130x_tx(priv, priv->tx_skb);
 		if (ret) {
 			netdev->stats.tx_errors++;
 		} else {
