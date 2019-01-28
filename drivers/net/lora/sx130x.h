@@ -32,6 +32,10 @@
 /* Page independent */
 #define SX1301_PAGE     0x00
 #define SX1301_VER      0x01
+#define SX1301_RX_DATA_BUF_ADDR 0x02 /* 16 wide */
+#define SX1301_RX_DATA_BUF_DATA 0x04
+#define SX1301_TX_DATA_BUF_ADDR 0x05
+#define SX1301_TX_DATA_BUF_DATA 0x06
 #define SX1301_MPA      0x09
 #define SX1301_MPD      0x0A
 #define SX1301_GEN      0x10
@@ -48,6 +52,9 @@
 #define SX1301_CHRS         (SX1301_PAGE_BASE(0) + 0x23)
 #define SX1301_FORCE_CTRL   (SX1301_PAGE_BASE(0) + 0x69)
 #define SX1301_MCU_CTRL     (SX1301_PAGE_BASE(0) + 0x6A)
+
+/* Page 1 */
+#define SX1301_TX_TRIG      (SX1301_PAGE_BASE(1) + 0x21)
 
 /* Page 2 */
 #define SX1301_RADIO_A_SPI_DATA     (SX1301_PAGE_BASE(2) + 0x21)
@@ -87,6 +94,10 @@ enum sx130x_fields {
 	F_FORCE_DEC_FILTER_GAIN,
 
 	F_EMERGENCY_FORCE_HOST_CTRL,
+
+	F_TX_TRIG_IMMEDIATE,
+	F_TX_TRIG_DELAYED,
+	F_TX_TRIG_GPS,
 };
 
 struct regmap *sx130x_get_regmap(struct device *dev);
