@@ -20,6 +20,15 @@ struct dgram_sock {
 	int ifindex;
 	bool bound;
 	struct notifier_block notifier;
+
+	u64 freq;
+	u8 sf;
+	u8 cr;
+	u16 bw;
+
+	u8 sync;
+
+	s8 power;
 };
 
 static inline struct dgram_sock *dgram_sk(const struct sock *sk)
@@ -69,6 +78,12 @@ static int dgram_bind(struct socket *sock, struct sockaddr *uaddr, int len)
 		ifindex = 0;
 
 	dgram->ifindex = ifindex;
+	dgram->freq = addr->lora_addr.tx.freq;
+	dgram->sf = addr->lora_addr.tx.sf;
+	dgram->cr = addr->lora_addr.tx.cr;
+	dgram->bw = addr->lora_addr.tx.bw;
+	dgram->sync = addr->lora_addr.tx.sync;
+	dgram->power = addr->lora_addr.tx.power;
 	dgram->bound = true;
 
 out:
@@ -118,6 +133,12 @@ static int dgram_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 
 	lora_skb_reserve(skb);
 	lora_skb_prv(skb)->ifindex = netdev->ifindex;
+	lora_skb_prv(skb)->freq = dgram->freq;
+	lora_skb_prv(skb)->sf = dgram->sf;
+	lora_skb_prv(skb)->cr = dgram->cr;
+	lora_skb_prv(skb)->bw = dgram->bw;
+	lora_skb_prv(skb)->sync = dgram->sync;
+	lora_skb_prv(skb)->power = dgram->power;
 
 	ret = memcpy_from_msg(skb_put(skb, size), msg, size);
 	if (ret < 0)
@@ -172,6 +193,12 @@ static int dgram_getname(struct socket *sock, struct sockaddr *uaddr,
 	memset(addr, 0, sizeof(*addr));
 	addr->lora_family = AF_LORA;
 	addr->lora_ifindex = dgram->ifindex;
+	addr->lora_addr.tx.freq = dgram->freq;
+	addr->lora_addr.tx.sf = dgram->sf;
+	addr->lora_addr.tx.cr = dgram->cr;
+	addr->lora_addr.tx.bw = dgram->bw;
+	addr->lora_addr.tx.sync = dgram->sync;
+	addr->lora_addr.tx.power = dgram->power;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
 	return sizeof(*addr);
@@ -198,6 +225,12 @@ static int dgram_release(struct socket *sock)
 	lock_sock(sk);
 
 	dgram->ifindex = 0;
+	dgram->freq = 0;
+	dgram->sf = 0;
+	dgram->cr = 0;
+	dgram->bw = 0;
+	dgram->sync = 0;
+	dgram->power = 0;
 	dgram->bound = false;
 
 	sock_orphan(sk);
@@ -251,6 +284,12 @@ static int dgram_notifier(struct notifier_block *nb, unsigned long msg, void *pt
 		lock_sock(sk);
 
 		dgram->ifindex = 0;
+		dgram->freq = 0;
+		dgram->sf = 0;
+		dgram->cr = 0;
+		dgram->bw = 0;
+		dgram->sync = 0;
+		dgram->power = 0;
 		dgram->bound = false;
 
 		release_sock(sk);
@@ -277,6 +316,12 @@ static int dgram_init(struct sock *sk)
 	pr_debug("lora: %s\n", __func__);
 
 	dgram->bound = false;
+	dgram->freq = 0;
+	dgram->sf = 0;
+	dgram->cr = 0;
+	dgram->bw = 0;
+	dgram->sync = 0;
+	dgram->power = 0;
 	dgram->ifindex = 0;
 
 	dgram->notifier.notifier_call = dgram_notifier;
