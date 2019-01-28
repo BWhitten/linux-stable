@@ -185,6 +185,10 @@ struct sx130x_priv {
 	void			*drvdata;
 	struct sx130x_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];
 	u8 tx_gain_lut_size;
+
+	struct sk_buff *tx_skb;
+	struct workqueue_struct *wq;
+	struct work_struct tx_work;
 };
 
 struct regmap *sx130x_get_regmap(struct device *dev)
@@ -798,6 +802,8 @@ static int sx130x_agc_init(struct sx130x_priv *priv)
 
 static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
+	struct sx130x_priv *priv = netdev_priv(netdev);
+
 	if (skb->protocol != htons(ETH_P_LORA)) {
 		kfree_skb(skb);
 		netdev->stats.tx_dropped++;
@@ -805,9 +811,34 @@ static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_dev
 	}
 
 	netif_stop_queue(netdev);
+	priv->tx_skb = skb;
+	queue_work(priv->wq, &priv->tx_work);
 
-	/* TODO */
 	return NETDEV_TX_OK;
+}
+
+static void sx130x_tx_work_handler(struct work_struct *ws)
+{
+	struct sx130x_priv *priv = container_of(ws, struct sx130x_priv, tx_work);
+	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	int ret;
+
+	netdev_dbg(netdev, "%s\n", __func__);
+
+	if (priv->tx_skb) {
+
+		/* TODO actual tx* */
+
+		if (!(netdev->flags & IFF_ECHO) ||
+		    priv->tx_skb->pkt_type != PACKET_LOOPBACK ||
+		    priv->tx_skb->protocol != htons(ETH_P_LORA))
+			kfree_skb(priv->tx_skb);
+
+		priv->tx_skb = NULL;
+	}
+
+	if (netif_queue_stopped(netdev))
+		netif_wake_queue(netdev);
 }
 
 static int sx130x_set_channel(struct sx130x_priv *priv, int chan, int offset)
@@ -1033,6 +1064,12 @@ static int sx130x_loradev_open(struct net_device *netdev)
 
 	mutex_unlock(&priv->io_lock);
 
+	priv->tx_skb = NULL;
+
+	priv->wq = alloc_workqueue("sx130x_wq",
+				   WQ_FREEZABLE | WQ_MEM_RECLAIM, 0);
+	INIT_WORK(&priv->tx_work, sx130x_tx_work_handler);
+
 	netif_start_queue(netdev);
 
 	return 0;
@@ -1049,10 +1086,21 @@ err_reg:
 
 static int sx130x_loradev_stop(struct net_device *netdev)
 {
+	struct sx130x_priv *priv = netdev_priv(netdev);
+
 	netdev_dbg(netdev, "%s", __func__);
 
 	netif_stop_queue(netdev);
 	close_loradev(netdev);
+
+	destroy_workqueue(priv->wq);
+	priv->wq = NULL;
+
+	if (priv->tx_skb) {
+		netdev->stats.tx_errors++;
+		dev_kfree_skb(priv->tx_skb);
+	}
+	priv->tx_skb = NULL;
 
 	return 0;
 }
