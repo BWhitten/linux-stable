@@ -109,7 +109,10 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	/* EMERGENCY_FORCE_HOST_CTRL */
 	[F_EMERGENCY_FORCE_HOST_CTRL] =
 		REG_FIELD(SX1301_EMERGENCY_FORCE_HOST_CTRL, 0, 0),
-
+	/* TX_TRIG */
+	[F_TX_TRIG_IMMEDIATE] = REG_FIELD(SX1301_TX_TRIG, 0, 0),
+	[F_TX_TRIG_DELAYED] = REG_FIELD(SX1301_TX_TRIG, 1, 1),
+	[F_TX_TRIG_GPS] = REG_FIELD(SX1301_TX_TRIG, 2, 2),
 	/* RSSI_X_FILTER_ALPHA */
 	[F_RSSI_BB_FILTER_ALPHA] = REG_FIELD(SX1301_RSSI_BB_FILTER_ALPHA, 0, 4),
 	[F_RSSI_DEC_FILTER_ALPHA] = REG_FIELD(SX1301_RSSI_DEC_FILTER_ALPHA, 0, 4),
@@ -165,6 +168,44 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	[F_FSK_TX_GAUSSIAN_SELECT_BT] = REG_FIELD(SX1301_FSK_TX, 1, 2),
 	[F_FSK_TX_PSIZE] = REG_FIELD(SX1301_FSK_TX, 5, 7),
 };
+
+struct sx130x_tx_header {
+	u8	tx_freq[3];
+	u32	start;
+	u8	tx_power:4,
+		modulation_type:1,
+		radio_select:1,
+		resered0:2;
+	u8	reserved1;
+
+	union {
+		struct lora_t {
+			u8	sf:4,
+				cr:3,
+				crc16_en:1;
+			u8	payload_len;
+			u8	mod_bw:2,
+				implicit_header:1,
+				ppm_offset:1,
+				invert_pol:1,
+				reserved0:3;
+			u16	preamble;
+			u8	reserved1;
+			u8	reserved2;
+		} lora;
+		struct fsk_t {
+			u8	freq_dev;
+			u8	payload_len;
+			u8	packet_mode:1,
+				crc_en:1,
+				enc_mode:2,
+				crc_mode:1,
+				reserved0:3;
+			u16	preamble;
+			u16	bitrate;
+		} fsk;
+	} u;
+} __packed;
 
 struct sx130x_tx_gain_lut {
 	s8 power;	/* dBm measured at board connector */
@@ -257,6 +298,9 @@ static bool sx130x_volatile_reg(struct device *dev, unsigned int reg)
 	case SX1301_CHRS:
 	case SX1301_MCU_CTRL:
 
+	case SX1301_TX_DATA_BUF_DATA:
+	case SX1301_RX_DATA_BUF_DATA:
+
 	case SX1301_RADIO_A_SPI_DATA_RB:
 	case SX1301_RADIO_B_SPI_DATA_RB:
 	case SX1301_DBG_ARB_MCU_RAM_DATA:
@@ -271,6 +315,7 @@ static bool sx130x_writeable_noinc_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case SX1301_MPD:
+	case SX1301_TX_DATA_BUF_DATA:
 		return true;
 	default:
 		return false;
@@ -281,6 +326,7 @@ static bool sx130x_readable_noinc_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case SX1301_MPD:
+	case SX1301_RX_DATA_BUF_DATA:
 		return true;
 	default:
 		return false;
@@ -800,6 +846,89 @@ static int sx130x_agc_init(struct sx130x_priv *priv)
 	return ret;
 }
 
+static int sx130x_tx(struct sx130x_priv *priv, void *data, int len)
+{
+	int ret, i;
+	u8 buff[256 + 16];
+	struct sx130x_tx_header *hdr = (struct sx130x_tx_header *)buff;
+	struct net_device *netdev = dev_get_drvdata(priv->dev);
+
+	/* TODO general checks to make sure we CAN send */
+
+	/* TODO Enable notch filter for lora 125 */
+
+	/* TODO get start delay for this TX */
+
+	/* TODO interpret tx power, HACK just set max power */
+
+	/* TODO get TX imbalance for this pow index from calibration step */
+
+	/* TODO set the dig gain */
+
+	/* TODO set TX PLL freq based on radio used to TX */
+
+	memset(buff, 0, sizeof(buff));
+
+	/* HACK set to 868MHz */
+	hdr->tx_freq[0] = 217;
+	hdr->tx_freq[1] = 0;
+	hdr->tx_freq[2] = 0;
+
+	hdr->start = 0; /* Start imediatly */
+	hdr->radio_select = 0; /* HACK Radio A transmit */
+	hdr->modulation_type = 0; /* HACK modulation LORA */
+	hdr->tx_power = 15; /* HACK power entry 15 */
+
+	hdr->u.lora.crc16_en = 1; /* Enable CRC16 */
+	hdr->u.lora.cr = 1; /* CR 4/5 */
+	hdr->u.lora.sf = 7; /* SF7 */
+	hdr->u.lora.payload_len = len; /* Set the data len to the skb len */
+	hdr->u.lora.implicit_header = 0; /* No implicit header */
+	hdr->u.lora.mod_bw = 0; /* Set 125KHz BW */
+	hdr->u.lora.ppm_offset = 0; /* TODO no ppm offset? */
+	hdr->u.lora.invert_pol = 0; /* TODO set no inverted polarity */
+
+	hdr->u.lora.preamble = 8; /* Set the standard preamble */
+
+	/* TODO 2 Msb in tx_freq0 for large narrow filtering, unset for now */
+	hdr->tx_freq[0] &= 0x3F;
+
+	/* Copy the TX data into the buffer ready to go */
+
+	memcpy((void *)&buff[16], data, len);
+
+	mutex_lock(&priv->io_lock);
+
+	/* Reset any transmissions */
+	ret = regmap_write(priv->regmap, SX1301_TX_TRIG, 0);
+	if (ret)
+		goto err_unlock;
+
+	/* Put the buffer into the tranmit fifo */
+	ret = regmap_write(priv->regmap, SX1301_TX_DATA_BUF_ADDR, 0);
+	if (ret)
+		goto err_unlock;
+
+	ret = regmap_noinc_write(priv->regmap, SX1301_TX_DATA_BUF_DATA, buff,
+				 len + 16);
+	if (ret)
+		goto err_unlock;
+
+	/* HACK just go for immediate transfer */
+	ret = sx130x_field_force_write(priv, F_TX_TRIG_IMMEDIATE, 1);
+	if (ret)
+		goto err_unlock;
+
+	netdev_dbg(netdev, "Transmitting packet of size %d: ", len);
+	for (i = 0; i < len + 16; i++)
+		netdev_dbg(netdev, "%X", buff[i]);
+
+err_unlock:
+	mutex_unlock(&priv->io_lock);
+
+	return ret;
+}
+
 static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
@@ -826,8 +955,13 @@ static void sx130x_tx_work_handler(struct work_struct *ws)
 	netdev_dbg(netdev, "%s\n", __func__);
 
 	if (priv->tx_skb) {
-
-		/* TODO actual tx* */
+		ret = sx130x_tx(priv, priv->tx_skb->data, priv->tx_skb->len);
+		if (ret) {
+			netdev->stats.tx_errors++;
+		} else {
+			netdev->stats.tx_packets++;
+			netdev->stats.tx_bytes += priv->tx_skb->len;
+		}
 
 		if (!(netdev->flags & IFF_ECHO) ||
 		    priv->tx_skb->pkt_type != PACKET_LOOPBACK ||
