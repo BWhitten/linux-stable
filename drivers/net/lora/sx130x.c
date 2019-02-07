@@ -216,6 +216,19 @@ struct sx130x_tx_gain_lut {
 	u8 mix_gain;
 };
 
+struct sx130x_cal_table {
+	unsigned int offset_i;
+	unsigned int offset_q;
+	unsigned int offset_rej;
+};
+
+struct sx130x_radio_cal {
+	struct sx130x_cal_table table[8];
+	s8 amp;
+	s8 phi;
+	u8 img_rej;
+};
+
 struct sx130x_priv {
 	struct lora_dev_priv	lora;
 	struct device		*dev;
@@ -227,6 +240,7 @@ struct sx130x_priv {
 	void			*drvdata;
 	struct sx130x_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];
 	u8 tx_gain_lut_size;
+	struct sx130x_radio_cal radio_table[2];
 
 	struct sk_buff *tx_skb;
 	struct workqueue_struct *wq;
@@ -557,7 +571,7 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 {
 	const struct firmware *fw;
 	unsigned int val;
-	int ret;
+	int ret, i;
 
 	ret = request_firmware(&fw, "sx1301_agc_calibration.bin", priv->dev);
 	if (ret) {
@@ -633,6 +647,33 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 	if ((val & (BIT(7) | BIT(0))) != (BIT(7) | BIT(0))) {
 		dev_err(priv->dev, "AGC calibration failed\n");
 		return -EIO;
+	}
+
+	/* Read back the I/Q calibration table per radio */
+	for (i = 0; i < 8; i++) {
+		ret = sx130x_agc_ram_read(priv, 0xA0 + i, &priv->radio_table[0].table[i].offset_i);
+		if (ret)
+			return ret;
+
+		ret = sx130x_agc_ram_read(priv, 0xA8 + i, &priv->radio_table[0].table[i].offset_q);
+		if (ret)
+			return ret;
+
+		ret = sx130x_agc_ram_read(priv, 0xC0 + i, &priv->radio_table[0].table[i].offset_rej);
+		if (ret)
+			return ret;
+
+		ret = sx130x_agc_ram_read(priv, 0xB0 + i, &priv->radio_table[1].table[i].offset_i);
+		if (ret)
+			return ret;
+
+		ret = sx130x_agc_ram_read(priv, 0xB8 + i, &priv->radio_table[1].table[i].offset_q);
+		if (ret)
+			return ret;
+
+		ret = sx130x_agc_ram_read(priv, 0xC8 + i, &priv->radio_table[1].table[i].offset_rej);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
