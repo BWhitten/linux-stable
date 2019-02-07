@@ -204,6 +204,23 @@ struct sx130x_tx_header {
 	} u;
 } __packed;
 
+struct sx130x_rx_meta {
+	u8	channel;
+	u8	sf:4,
+		cr:3,
+		crc16_en:1;
+	u8	snr_av;
+	u8	snr_min;
+	u8	snr_max;
+	u8	rssi;
+	__be32	timestamp;
+	__be16	crc;
+	u8	modem;
+	__be16	corr_position;
+	u8	corr_snr;
+	u8	reserved[2];
+} __packed;
+
 struct sx130x_tx_gain_lut {
 	s8 power;	/* dBm measured at board connector */
 	u8 dig_gain;
