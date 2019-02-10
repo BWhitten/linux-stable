@@ -1084,6 +1084,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	priv->wq = alloc_workqueue("sx130x_wq",
 				   WQ_FREEZABLE | WQ_MEM_RECLAIM, 0);
 	INIT_WORK(&priv->tx_work, sx130x_tx_work_handler);
+	INIT_WORK(&priv->rx_work, sx130x_rx_work_handler);
 
 	netif_start_queue(netdev);
 
