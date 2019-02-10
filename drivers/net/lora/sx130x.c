@@ -63,6 +63,7 @@ struct sx130x_priv {
 	struct lora_dev_priv	lora;
 	struct device		*dev;
 	struct gpio_desc	*rst_gpio;
+	struct gpio_desc	*gpio[SX1301_NUM_GPIOS];
 	struct regmap		*regmap;
 	struct regmap_field	*regmap_fields[ARRAY_SIZE(sx130x_regmap_fields)];
 	struct mutex		io_lock;
@@ -798,6 +799,12 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 				priv->tx_gain_lut[i].mix_gain = *(power_lut++) & 0x0F;
 			}
 		}
+
+		for (i = 0; i < SX1301_NUM_GPIOS; i++) {
+			priv->gpio[i] = devm_gpiod_get_index_optional(dev, "gpio", i, GPIOD_IN);
+			if (priv->gpio[i] == NULL)
+				dev_dbg(dev, "GPIO%d not available, ignoring", i);
+		}
 	}
 
 	return 0;
@@ -810,7 +817,7 @@ int sx130x_probe(struct device *dev)
 	struct sx130x_priv *priv = netdev_priv(netdev);
 	unsigned int ver;
 	unsigned int val;
-	int ret;
+	int ret, i;
 
 	ret = regmap_read(priv->regmap, SX1301_VER, &ver);
 	if (ret) {
@@ -905,8 +912,14 @@ int sx130x_probe(struct device *dev)
 		goto out;
 	}
 
+	/* If we have any GPIO connected leave in configuration 0 */
 	val &= ~GENMASK(3, 0);
-	val |= 2;
+	for (i = 0; i < SX1301_NUM_GPIOS; i++) {
+		if (priv->gpio[i])
+			break;
+	}
+	if (i == SX1301_NUM_GPIOS)
+		val |= 2;
 
 	ret = regmap_write(priv->regmap, SX1301_GPSO, val);
 	if (ret) {
