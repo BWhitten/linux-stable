@@ -346,6 +346,7 @@ static bool sx130x_readable_noinc_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case SX1301_MPD:
+	case SX1301_RX_DATA_BUF_DATA:
 		return true;
 	default:
 		return false;
