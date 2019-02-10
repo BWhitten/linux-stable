@@ -1030,6 +1030,66 @@ static void sx130x_tx_work_handler(struct work_struct *ws)
 
 static int sx130x_queue_rx_packets(struct sx130x_priv *priv, unsigned int packets)
 {
+	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	struct sx130x_rx_meta *meta;
+	struct sk_buff *skb;
+	struct list_head rx_list;
+	u8 buff[255 + sizeof(struct sx130x_rx_meta)];
+	unsigned int crc, size;
+	int ret = 0;
+
+	INIT_LIST_HEAD(&rx_list);
+
+	while (packets--) {
+		skb = alloc_lora_skb(netdev, NULL);
+		if (unlikely(!skb))
+			return -ENOMEM;
+
+		ret = regmap_read(priv->regmap, SX1301_RPS, &crc);
+		ret = regmap_read(priv->regmap, SX1301_RPPS, &size);
+		ret = regmap_noinc_read(priv->regmap, SX1301_RX_DATA_BUF_DATA,
+					buff, size + sizeof(struct sx130x_rx_meta));
+
+		memcpy(skb_put(skb, size), buff, size);
+
+		meta = (struct sx130x_rx_meta *)buff + size;
+		lora_skb_prv(skb)->ifindex = netdev->ifindex;
+		lora_skb_prv(skb)->freq = meta->channel; /* TODO resolve channel with rx frequency */
+		lora_skb_prv(skb)->sf = meta->sf;
+		switch (meta->cr) {
+		case 1:
+			lora_skb_prv(skb)->cr = 5; /* CR 4/5 */
+			break;
+		case 2:
+			lora_skb_prv(skb)->cr = 6; /* CR 4/6 */
+			break;
+		case 3:
+			lora_skb_prv(skb)->cr = 7; /* CR 4/7 */
+			break;
+		case 4:
+			lora_skb_prv(skb)->cr = 8; /* CR 4/8 */
+			break;
+		default:
+			return -ENXIO;
+		}
+		lora_skb_prv(skb)->bw = 125; /* TODO resolve bw with the listening channel */
+		lora_skb_prv(skb)->snr = meta->snr_av; /* / 4 ? */
+		lora_skb_prv(skb)->rssi = meta->rssi;
+
+		/* TODO do we need CRC and CRC status ? */
+		/* TODO timestamp of reception */
+
+		/* Add to list, will pass up later */
+		list_add_tail(&skb->list, &rx_list);
+
+		/* Advance FIFO */
+		ret = regmap_write(priv->regmap, SX1301_RPNS, 0);
+	}
+
+	/* Receive any packets we queued up */
+	netif_receive_skb_list(&rx_list);
+
+	return ret;
 }
 
 static irqreturn_t sx130x_rx_gpio_interrupt(int irq, void *dev_id)
