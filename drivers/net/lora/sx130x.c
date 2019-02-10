@@ -312,6 +312,11 @@ static bool sx130x_volatile_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case SX1301_MPD:
+	case SX1301_RPNS:
+	case SX1301_RPAPL:
+	case SX1301_RPAPH:
+	case SX1301_RPS:
+	case SX1301_RPPS:
 	case SX1301_AGCSTS:
 
 	case SX1301_CHRS:
