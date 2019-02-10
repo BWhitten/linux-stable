@@ -29,6 +29,8 @@
 #define SX1301_PA_GAIN_OFFSET 6
 #define SX1301_DAC_GAIN_OFFSET 4
 
+#define SX1301_NUM_GPIOS 5
+
 /* Page independent */
 #define SX1301_PAGE     0x00
 #define SX1301_VER      0x01
