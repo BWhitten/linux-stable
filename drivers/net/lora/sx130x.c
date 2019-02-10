@@ -251,6 +251,7 @@ struct sx130x_priv {
 	struct sk_buff *tx_skb;
 	struct workqueue_struct *wq;
 	struct work_struct tx_work;
+	struct work_struct rx_work;
 };
 
 struct regmap *sx130x_get_regmap(struct device *dev)
@@ -1025,13 +1026,60 @@ static void sx130x_tx_work_handler(struct work_struct *ws)
 		netif_wake_queue(netdev);
 }
 
+static int sx130x_queue_rx_packets(struct sx130x_priv *priv, unsigned int packets)
+{
+}
+
+static irqreturn_t sx130x_rx_gpio_interrupt(int irq, void *dev_id)
+{
+	struct net_device *netdev = dev_id;
+	struct sx130x_priv *priv = netdev_priv(netdev);
+	unsigned int packets;
+	int ret;
+
+	netdev_dbg(netdev, "%s\n", __func__);
+
+	mutex_lock(&priv->io_lock);
+
+	ret = regmap_read(priv->regmap, SX1301_RPNS, &packets);
+	if (ret)
+		goto err_unlock;
+
+	ret = sx130x_queue_rx_packets(priv, packets);
+
+err_unlock:
+	mutex_unlock(&priv->io_lock);
+
+	return IRQ_HANDLED;
+}
+
+static void sx130x_rx_work_handler(struct work_struct *ws)
+{
+	struct sx130x_priv *priv = container_of(ws, struct sx130x_priv, rx_work);
+	unsigned int packets;
+	int ret;
+
+	mutex_lock(&priv->io_lock);
+
+	/* Wait for there to be FIFO contents in tight loop for 1ms
+	 * then release lock for other functions */
+	ret = regmap_read_poll_timeout(priv->regmap, SX1301_RPNS, packets,
+				       packets, 0, 1000);
+	if (ret)
+		goto err_unlock;
+
+	ret = sx130x_queue_rx_packets(priv, packets);
+
+err_unlock:
+	mutex_unlock(&priv->io_lock);
+}
+
 static int sx130x_poll(struct napi_struct *napi, int budget)
 {
 	struct sx130x_priv *priv = container_of(napi, struct sx130x_priv, napi);
-	int spent;
+	int spent = 0;
 
-	if (priv->rx_list == NULL)
-		return 0;
+	queue_work(priv->wq, &priv->rx_work);
 
 	return spent;
 }
@@ -1039,7 +1087,7 @@ static int sx130x_poll(struct napi_struct *napi, int budget)
 static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
-	int ret;
+	int ret, irq;
 
 	netdev_dbg(netdev, "%s", __func__);
 
@@ -1102,12 +1150,29 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	priv->wq = alloc_workqueue("sx130x_wq",
 				   WQ_FREEZABLE | WQ_MEM_RECLAIM, 0);
 	INIT_WORK(&priv->tx_work, sx130x_tx_work_handler);
-	INIT_WORK(&priv->rx_work, sx130x_rx_work_handler);
+
+	/* If we have the gpio then used interrupt based rx */
+	if (priv->gpio[0]) {
+		irq = gpiod_to_irq(priv->gpio[0]);
+		if (irq <= 0)
+			netdev_warn(netdev, "Failed to obtain interrupt for GPIO0 (%d)\n", irq);
+		else {
+			netdev_info(netdev, "Succeeded in obtaining interrupt for GPIO0: %d\n", irq);
+			ret = request_threaded_irq(irq, NULL, sx130x_rx_gpio_interrupt, IRQF_ONESHOT | IRQF_TRIGGER_RISING, netdev->name, netdev);
+			if (ret) {
+				netdev_err(netdev, "Failed to request interrupt for GPIO0 (%d)\n", ret);
+				goto err_irq;
+			}
+		}
+	} else {
+		INIT_WORK(&priv->rx_work, sx130x_rx_work_handler);
+	}
 
 	netif_start_queue(netdev);
 
 	return 0;
 
+err_irq:
 err_open:
 err_firmware:
 err_calibrate:
@@ -1168,8 +1233,6 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 	dev_set_drvdata(dev, netdev);
 	priv->dev = dev;
 
-	netif_napi_add(netdev, &priv->napi, sx130x_poll, 64);
-
 	for (i = 0; i < ARRAY_SIZE(sx130x_regmap_fields); i++) {
 		const struct reg_field *reg_fields = sx130x_regmap_fields;
 
@@ -1205,6 +1268,9 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 				dev_dbg(dev, "GPIO%d not available, ignoring", i);
 		}
 	}
+
+	if (!priv->gpio[0])
+		netif_napi_add(netdev, &priv->napi, sx130x_poll, 64);
 
 	return 0;
 }
