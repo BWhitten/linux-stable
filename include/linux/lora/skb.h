@@ -21,6 +21,9 @@ struct lora_skb_priv {
 	u8 sync;
 
 	s8 power;
+
+	u8 snr;
+	s16 rssi;
 };
 
 static inline struct lora_skb_priv *lora_skb_prv(struct sk_buff *skb)
