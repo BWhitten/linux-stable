@@ -237,6 +237,7 @@ struct sx130x_cal_table {
 struct sx130x_priv {
 	struct lora_dev_priv	lora;
 	struct device		*dev;
+	struct napi_struct	napi;
 	struct gpio_desc	*rst_gpio;
 	struct regmap		*regmap;
 	struct regmap_field	*regmap_fields[ARRAY_SIZE(sx130x_regmap_fields)];
@@ -1018,6 +1019,17 @@ static void sx130x_tx_work_handler(struct work_struct *ws)
 		netif_wake_queue(netdev);
 }
 
+static int sx130x_poll(struct napi_struct *napi, int budget)
+{
+	struct sx130x_priv *priv = container_of(napi, struct sx130x_priv, napi);
+	int spent;
+
+	if (priv->rx_list == NULL)
+		return 0;
+
+	return spent;
+}
+
 static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
@@ -1149,6 +1161,8 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 
 	dev_set_drvdata(dev, netdev);
 	priv->dev = dev;
+
+	netif_napi_add(netdev, &priv->napi, sx130x_poll, 64);
 
 	for (i = 0; i < ARRAY_SIZE(sx130x_regmap_fields); i++) {
 		const struct reg_field *reg_fields = sx130x_regmap_fields;

@@ -107,9 +107,9 @@ examples:
         reset-gpios = <&pioB 27 GPIO_ACTIVE_HIGH>;
         spi-max-frequency = <8000000>;
 
-	semtech,power-lut = [ 00 00 00 03 09
-			03 00 00 03 0C
-			04 00 00 03 0D ];
+        semtech,power-lut = /bits/ 8 < (-2) 0 0 3 9 >,
+                            /bits/ 8 < 3 0 0 3 12 >,
+                            /bits/ 8 < 4 0 0 3 13 >;
 
         radio-spi {
           #address-cells = <1>;
