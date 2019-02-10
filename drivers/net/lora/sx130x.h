@@ -29,6 +29,8 @@
 #define SX1301_PA_GAIN_OFFSET 6
 #define SX1301_DAC_GAIN_OFFSET 4
 
+#define SX1301_NUM_GPIOS 5
+
 /* Calibrated value for 500KHz BW and notch filter disabled */
 #define TX_START_DELAY_DEFAULT  1497
 
