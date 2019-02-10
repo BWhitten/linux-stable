@@ -653,19 +653,19 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 
 	/* Read back the I/Q calibration table per radio */
 	for (i = 0; i < 7; i++) {
-		ret = sx1301_agc_ram_read(priv, 0xA0 + i, &priv->cal_table[0].i[i]);
+		ret = sx130x_agc_ram_read(priv, 0xA0 + i, &priv->cal_table[0].i[i]);
 		if (ret)
 			return ret;
 
-		ret = sx1301_agc_ram_read(priv, 0xA8 + i, &priv->cal_table[0].q[i]);
+		ret = sx130x_agc_ram_read(priv, 0xA8 + i, &priv->cal_table[0].q[i]);
 		if (ret)
 			return ret;
 
-		ret = sx1301_agc_ram_read(priv, 0xB0 + i, &priv->cal_table[1].i[i]);
+		ret = sx130x_agc_ram_read(priv, 0xB0 + i, &priv->cal_table[1].i[i]);
 		if (ret)
 			return ret;
 
-		ret = sx1301_agc_ram_read(priv, 0xB8 + i, &priv->cal_table[1].q[i]);
+		ret = sx130x_agc_ram_read(priv, 0xB8 + i, &priv->cal_table[1].q[i]);
 		if (ret)
 			return ret;
 	}
