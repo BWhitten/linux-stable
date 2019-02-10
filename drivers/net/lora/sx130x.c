@@ -250,6 +250,7 @@ struct sx130x_priv {
 	struct sk_buff *tx_skb;
 	struct workqueue_struct *wq;
 	struct work_struct tx_work;
+	struct delayed_work rx_work;
 };
 
 struct regmap *sx130x_get_regmap(struct device *dev)
@@ -1026,10 +1027,114 @@ static void sx130x_tx_work_handler(struct work_struct *ws)
 		netif_wake_queue(netdev);
 }
 
+static int sx130x_rx_packets(struct sx130x_priv *priv)
+{
+	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	struct sx130x_rx_meta *meta;
+	struct sk_buff *skb;
+	struct list_head rx_list;
+	u8 buff[255 + sizeof(struct sx130x_rx_meta)];
+	unsigned int crc, size, packets;
+	int ret = 0;
+
+	INIT_LIST_HEAD(&rx_list);
+
+	mutex_lock(&priv->io_lock);
+	ret = regmap_read(priv->regmap, SX1301_RPNS, &packets);
+	if (ret)
+		goto err_unlock;
+
+	while (packets--) {
+		skb = alloc_lora_skb(netdev, NULL);
+		if (unlikely(!skb))
+			break;
+
+		ret = regmap_read(priv->regmap, SX1301_RPS, &crc);
+		if (ret)
+			break;
+
+		ret = regmap_read(priv->regmap, SX1301_RPPS, &size);
+		if (ret)
+			break;
+
+		ret = regmap_noinc_read(priv->regmap, SX1301_RX_DATA_BUF_DATA,
+					buff, size + sizeof(struct sx130x_rx_meta));
+		if (ret)
+			break;
+
+		memcpy(skb_put(skb, size), buff, size);
+
+		meta = (struct sx130x_rx_meta *)buff + size;
+		lora_skb_prv(skb)->ifindex = netdev->ifindex;
+		lora_skb_prv(skb)->freq = meta->channel; /* TODO resolve channel with rx frequency */
+		lora_skb_prv(skb)->sf = meta->sf;
+		switch (meta->cr) {
+		case 1:
+			lora_skb_prv(skb)->cr = 5; /* CR 4/5 */
+			break;
+		case 2:
+			lora_skb_prv(skb)->cr = 6; /* CR 4/6 */
+			break;
+		case 3:
+			lora_skb_prv(skb)->cr = 7; /* CR 4/7 */
+			break;
+		case 4:
+			lora_skb_prv(skb)->cr = 8; /* CR 4/8 */
+			break;
+		default:
+			goto err_unlock;
+		}
+		lora_skb_prv(skb)->bw = 125; /* TODO resolve bw with the listening channel */
+		lora_skb_prv(skb)->snr = meta->snr_av; /* / 4 ? */
+		lora_skb_prv(skb)->rssi = meta->rssi;
+
+		/* TODO do we need CRC and CRC status ? */
+		/* TODO timestamp of reception */
+
+		/* Add to list, will pass up later */
+		list_add_tail(&skb->list, &rx_list);
+
+		/* Advance FIFO */
+		ret = regmap_write(priv->regmap, SX1301_RPNS, 0);
+		if (ret)
+			break;
+	}
+
+err_unlock:
+	mutex_unlock(&priv->io_lock);
+
+	/* Receive any packets we queued up */
+	netif_receive_skb_list(&rx_list);
+
+	return ret;
+}
+
+static irqreturn_t sx130x_rx_gpio_interrupt(int irq, void *dev_id)
+{
+	struct net_device *netdev = dev_id;
+	struct sx130x_priv *priv = netdev_priv(netdev);
+	int ret;
+
+	netdev_dbg(netdev, "%s\n", __func__);
+
+	ret = sx130x_rx_packets(priv);
+
+	return IRQ_HANDLED;
+}
+
+static void sx130x_rx_work_handler(struct work_struct *ws)
+{
+	struct sx130x_priv *priv = container_of(ws, struct sx130x_priv, rx_work.work);
+	int ret;
+
+	ret = sx130x_rx_packets(priv);
+	schedule_delayed_work(&priv->rx_work, msecs_to_jiffies(10));
+}
+
 static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
-	int ret;
+	int ret, irq;
 
 	netdev_dbg(netdev, "%s", __func__);
 
@@ -1093,10 +1198,29 @@ static int sx130x_loradev_open(struct net_device *netdev)
 				   WQ_FREEZABLE | WQ_MEM_RECLAIM, 0);
 	INIT_WORK(&priv->tx_work, sx130x_tx_work_handler);
 
+	/* If we have the gpio then used interrupt based rx */
+	if (priv->gpio[0]) {
+		irq = gpiod_to_irq(priv->gpio[0]);
+		if (irq <= 0)
+			netdev_warn(netdev, "Failed to obtain interrupt for GPIO0 (%d)\n", irq);
+		else {
+			netdev_info(netdev, "Succeeded in obtaining interrupt for GPIO0: %d\n", irq);
+			ret = request_threaded_irq(irq, NULL, sx130x_rx_gpio_interrupt, IRQF_ONESHOT | IRQF_TRIGGER_RISING, netdev->name, netdev);
+			if (ret) {
+				netdev_err(netdev, "Failed to request interrupt for GPIO0 (%d)\n", ret);
+				goto err_irq;
+			}
+		}
+	} else {
+		INIT_DELAYED_WORK(&priv->rx_work, sx130x_rx_work_handler);
+		schedule_delayed_work(&priv->rx_work, msecs_to_jiffies(10));
+	}
+
 	netif_start_queue(netdev);
 
 	return 0;
 
+err_irq:
 err_open:
 err_firmware:
 err_calibrate:
