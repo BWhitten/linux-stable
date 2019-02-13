@@ -155,7 +155,7 @@ static int dgram_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 }
 
 static int dgram_getname(struct socket *sock, struct sockaddr *uaddr,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
 			 int *len,
 #endif
 			 int peer)
@@ -173,7 +173,7 @@ static int dgram_getname(struct socket *sock, struct sockaddr *uaddr,
 	addr->lora_family = AF_LORA;
 	addr->lora_ifindex = dgram->ifindex;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 	return sizeof(*addr);
 #else
 	*len = sizeof(*addr);
