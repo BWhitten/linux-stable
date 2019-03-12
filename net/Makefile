@@ -61,6 +61,7 @@ obj-$(CONFIG_IEEE802154)	+= ieee802154/
 obj-$(CONFIG_MAC802154)		+= mac802154/
 obj-$(CONFIG_LORA)		+= lora/
 obj-$(CONFIG_LORAWAN)		+= lorawan/
+obj-$(CONFIG_FSK)		+= fsk/
 
 obj-$(CONFIG_SYSCTL)		+= sysctl_net.o
 obj-$(CONFIG_DNS_RESOLVER)	+= dns_resolver/
