@@ -52,6 +52,7 @@ obj-$(CONFIG_FDDI) += fddi/
 obj-$(CONFIG_HIPPI) += hippi/
 obj-$(CONFIG_HAMRADIO) += hamradio/
 obj-$(CONFIG_QCOM_IPA) += ipa/
+obj-$(CONFIG_FSK) += fsk/
 obj-$(CONFIG_LORA) += lora/
 obj-$(CONFIG_PLIP) += plip/
 obj-$(CONFIG_PPP) += ppp/
