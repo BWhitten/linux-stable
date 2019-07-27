@@ -62,7 +62,6 @@ static int picogw_fake_of_nodes(struct device *dev)
 		return -ENOMEM;
 	node->name = "<NULL>";
 	node->full_name = "usb0483,5740";
-	node->type = "<NULL>";
 	kobject_init(&node->kobj, &picogw_kobj_type);
 	node->fwnode.ops = &of_fwnode_ops;
 
@@ -73,7 +72,6 @@ static int picogw_fake_of_nodes(struct device *dev)
 	}
 	child->name = "lora";
 	child->full_name = "lora";
-	child->type = "<NULL>";
 	child->parent = node;
 	kobject_init(&child->kobj, &picogw_kobj_type);
 	child->fwnode.ops = &of_fwnode_ops;
@@ -98,7 +96,6 @@ static int picogw_fake_of_nodes(struct device *dev)
 	}
 	spi->name = "radio-spi";
 	spi->full_name = "radio-spi";
-	spi->type = "<NULL>";
 	spi->parent = child;
 	kobject_init(&spi->kobj, &picogw_kobj_type);
 	spi->fwnode.ops = &of_fwnode_ops;
@@ -113,7 +110,6 @@ static int picogw_fake_of_nodes(struct device *dev)
 	}
 	radio_a->name = "lora@0";
 	radio_a->full_name = "lora@0";
-	radio_a->type = "<NULL>";
 	radio_a->parent = spi;
 	kobject_init(&radio_a->kobj, &picogw_kobj_type);
 	radio_a->fwnode.ops = &of_fwnode_ops;
@@ -155,7 +151,6 @@ static int picogw_fake_of_nodes(struct device *dev)
 	}
 	radio_b->name = "lora@1";
 	radio_b->full_name = "Lora@1";
-	radio_b->type = "<NULL>";
 	radio_b->parent = spi;
 	kobject_init(&radio_b->kobj, &picogw_kobj_type);
 	radio_b->fwnode.ops = &of_fwnode_ops;
