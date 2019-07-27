@@ -77,7 +77,6 @@ static const struct genl_ops nllora_ops[] = {
 	{
 		.cmd = NLLORA_CMD_GET_FREQ,
 		.doit = nllora_cmd_get_freq,
-		.policy = nllora_policy,
 		.flags = 0/*GENL_ADMIN_PERM*/,
 		.internal_flags = 0,
 	},
@@ -88,6 +87,7 @@ static struct genl_family nllora_fam __ro_after_init = {
 	.hdrsize = 0,
 	.version = 1,
 	.maxattr = NLLORA_ATTR_MAX,
+	.policy = nllora_policy,
 	.netnsok = true,
 	.module = THIS_MODULE,
 	.ops = nllora_ops,

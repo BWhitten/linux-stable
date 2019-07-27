@@ -77,7 +77,6 @@ static const struct genl_ops nlfsk_ops[] = {
 	{
 		.cmd = NLFSK_CMD_GET_FREQ,
 		.doit = nlfsk_cmd_get_freq,
-		.policy = nlfsk_policy,
 		.flags = 0/*GENL_ADMIN_PERM*/,
 		.internal_flags = 0,
 	},
@@ -88,6 +87,7 @@ static struct genl_family nlfsk_fam __ro_after_init = {
 	.hdrsize = 0,
 	.version = 1,
 	.maxattr = NLFSK_ATTR_MAX,
+	.policy = nlfsk_policy,
 	.netnsok = true,
 	.module = THIS_MODULE,
 	.ops = nlfsk_ops,
