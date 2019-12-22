@@ -1940,9 +1940,7 @@ EXPORT_SYMBOL_GPL(regmap_raw_write);
 int regmap_noinc_write(struct regmap *map, unsigned int reg,
 		      const void *val, size_t val_len)
 {
-	struct regmap_range_node *range;
-	size_t len;
-	void *buf;
+	size_t write_len;
 	int ret;
 
 	if (!map->bus)
@@ -1963,45 +1961,17 @@ int regmap_noinc_write(struct regmap *map, unsigned int reg,
 		goto out_unlock;
 	}
 
-	range = _regmap_range_lookup(map, reg);
-	if (range) {
-		ret = _regmap_select_page(map, &reg, range, 1);
-		if (ret != 0)
+	while (val_len) {
+		if (map->max_raw_write && map->max_raw_write < val_len)
+			write_len = map->max_raw_write;
+		else
+			write_len = val_len;
+		ret = _regmap_raw_write(map, reg, val, write_len);
+		if (ret)
 			goto out_unlock;
+		val = ((u8 *)val) + write_len;
+		val_len -= write_len;
 	}
-
-	map->format.format_reg(map->work_buf, reg, map->reg_shift);
-	regmap_set_work_buf_flag_mask(map, map->format.reg_bytes,
-				      map->write_flag_mask);
-
-
-	trace_regmap_hw_write_start(map, reg, 1);
-
-	ret = -ENOTSUPP;
-	if (map->bus->gather_write)
-		ret = map->bus->gather_write(map->bus_context, map->work_buf,
-					     map->format.reg_bytes +
-					     map->format.pad_bytes,
-					     val, val_len);
-
-	/* If that didn't work fall back on linearising by hand. */
-	if (ret == -ENOTSUPP) {
-		len = map->format.reg_bytes + map->format.pad_bytes + val_len;
-		buf = kzalloc(len, GFP_KERNEL);
-		if (!buf) {
-			ret = -ENOMEM;
-			goto out_unlock;
-		}
-
-		memcpy(buf, map->work_buf, map->format.reg_bytes);
-		memcpy(buf + map->format.reg_bytes + map->format.pad_bytes,
-		       val, val_len);
-		ret = map->bus->write(map->bus_context, buf, len);
-
-		kfree(buf);
-	}
-
-	trace_regmap_hw_write_done(map, reg, 1);
 
 out_unlock:
 	map->unlock(map->lock_arg);
