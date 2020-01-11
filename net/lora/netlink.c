@@ -24,7 +24,7 @@ static struct genl_family nllora_fam;
 
 static int nllora_cmd_get_freq(struct sk_buff *skb, struct genl_info *info)
 {
-	struct nlattr **attrs = genl_family_attrbuf(&nllora_fam);
+	struct nlattr **attrs = info->attrs;
 	bool have_ifindex = attrs[NLLORA_ATTR_IFINDEX];
 	struct sk_buff *msg;
 	struct cfglora_registered_phy *rphy;

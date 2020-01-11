@@ -24,7 +24,7 @@ static struct genl_family nlfsk_fam;
 
 static int nlfsk_cmd_get_freq(struct sk_buff *skb, struct genl_info *info)
 {
-	struct nlattr **attrs = genl_family_attrbuf(&nlfsk_fam);
+	struct nlattr **attrs = info->attrs;
 	bool have_ifindex = attrs[NLFSK_ATTR_IFINDEX];
 	struct sk_buff *msg;
 	struct cfgfsk_registered_phy *rphy;
