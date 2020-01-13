@@ -1528,24 +1528,30 @@ static int _regmap_raw_write_impl(struct regmap *map, unsigned int reg,
 		int win_offset = (reg - range->range_min) % range->window_len;
 		int win_residue = range->window_len - win_offset;
 
-		/* If the write goes beyond the end of the window split it */
-		while (val_num > win_residue) {
-			dev_dbg(map->dev, "Writing window %d/%zu\n",
-				win_residue, val_len / map->format.val_bytes);
-			ret = _regmap_raw_write_impl(map, reg, val,
-						     win_residue *
-						     map->format.val_bytes);
-			if (ret != 0)
-				return ret;
+		if (!regmap_writeable_noinc(map, reg)) {
+			/* If the write goes beyond the end of the window
+			 * split it */
+			while (val_num > win_residue) {
+				dev_dbg(map->dev, "Writing window %d/%zu\n",
+					win_residue,
+					val_len / map->format.val_bytes);
+				ret = _regmap_raw_write_impl(map, reg, val,
+							     win_residue *
+							     map->format.val_bytes);
+				if (ret != 0)
+					return ret;
 
-			reg += win_residue;
-			val_num -= win_residue;
-			val += win_residue * map->format.val_bytes;
-			val_len -= win_residue * map->format.val_bytes;
+				reg += win_residue;
+				val_num -= win_residue;
+				val += win_residue * map->format.val_bytes;
+				val_len -= win_residue * map->format.val_bytes;
 
-			win_offset = (reg - range->range_min) %
-				range->window_len;
-			win_residue = range->window_len - win_offset;
+				win_offset = (reg - range->range_min) %
+					range->window_len;
+				win_residue = range->window_len - win_offset;
+			}
+		} else {
+			val_num = 1;
 		}
 
 		ret = _regmap_select_page(map, &reg, range, val_num);
