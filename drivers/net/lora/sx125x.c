@@ -25,19 +25,67 @@
 #include "sx125x.h"
 
 enum sx125x_fields {
+	F_PA_DRIVER_EN,
+	F_TX_EN,
+	F_RX_EN,
+	F_STDBY_EN,
 	F_CLK_OUT,
 	F_TX_DAC_CLK_SEL,
 	F_SX1257_XOSC_GM_STARTUP,
 	F_SX1257_XOSC_DISABLE_CORE,
+	F_TX_DAC_GAIN,
+	F_TX_MIXER_GAIN,
+	F_TX_PLL_BW,
+	F_TX_ANA_BW,
+	F_TX_DAC_BW,
+	F_RX_LNA_GAIN,
+	F_RX_BB_GAIN,
+	F_RX_LNA_Z_IN,
+	F_RX_PLL_BW,
+	F_RX_ADC_BW,
+	F_RX_ADC_TRIM,
+	F_RX_BB_BW,
+	F_RX_ADC_TEMP,
+	F_LOW_BAT_EN,
+	F_PLL_LOCK_RX,
+	F_PLL_LOCK_TX,
 };
 
 static const struct reg_field sx125x_regmap_fields[] = {
+	/* MODE */
+	[F_PA_DRIVER_EN]   = REG_FIELD(SX125X_MODE, 3, 3),
+	[F_TX_EN]          = REG_FIELD(SX125X_MODE, 2, 2),
+	[F_RX_EN]          = REG_FIELD(SX125X_MODE, 1, 1),
+	[F_STDBY_EN]       = REG_FIELD(SX125X_MODE, 0, 0),
 	/* CLK_SELECT */
 	[F_CLK_OUT]        = REG_FIELD(SX125X_CLK_SELECT, 1, 1),
 	[F_TX_DAC_CLK_SEL] = REG_FIELD(SX125X_CLK_SELECT, 0, 0),
 	/* XOSC */ /* TODO maybe make this dynamic */
 	[F_SX1257_XOSC_GM_STARTUP]  = REG_FIELD(SX1257_XOSC, 0, 3),
 	[F_SX1257_XOSC_DISABLE_CORE]  = REG_FIELD(SX1257_XOSC, 5, 5),
+	/* TX_GAIN */
+	[F_TX_DAC_GAIN]    = REG_FIELD(SX125X_TX_GAIN, 4, 6),
+	[F_TX_MIXER_GAIN]  = REG_FIELD(SX125X_TX_GAIN, 0, 3),
+	/* TX_BW */
+	[F_TX_PLL_BW]      = REG_FIELD(SX125X_TX_BW, 5, 6),
+	[F_TX_ANA_BW]      = REG_FIELD(SX125X_TX_BW, 0, 4),
+	/* TX_DAC_BW */
+	[F_TX_DAC_BW]      = REG_FIELD(SX125X_TX_DAC_BW, 0, 2),
+	/* RX_ANA_GAIN */
+	[F_RX_LNA_GAIN]    = REG_FIELD(SX125X_RX_ANA_GAIN, 5, 7),
+	[F_RX_BB_GAIN]     = REG_FIELD(SX125X_RX_ANA_GAIN, 1, 4),
+	[F_RX_LNA_Z_IN]    = REG_FIELD(SX125X_RX_ANA_GAIN, 0, 0),
+	/* RX_BW */
+	[F_RX_ADC_BW]      = REG_FIELD(SX125X_RX_BW, 5, 7),
+	[F_RX_ADC_TRIM]    = REG_FIELD(SX125X_RX_BW, 2, 4),
+	[F_RX_BB_BW]       = REG_FIELD(SX125X_RX_BW, 0, 1),
+	/* RX_PLL_BW */
+	[F_RX_PLL_BW]      = REG_FIELD(SX125X_RX_PLL_BW, 1, 2),
+	[F_RX_ADC_TEMP]    = REG_FIELD(SX125X_RX_PLL_BW, 0, 0),
+	/* MODE_STATUS */
+	[F_LOW_BAT_EN]     = REG_FIELD(SX125X_MODE_STATUS, 2, 2),
+	[F_PLL_LOCK_RX]    = REG_FIELD(SX125X_MODE_STATUS, 1, 1),
+	[F_PLL_LOCK_TX]    = REG_FIELD(SX125X_MODE_STATUS, 0, 0),
 };
 
 struct sx125x_priv {
@@ -61,6 +109,12 @@ static int sx125x_field_write(struct sx125x_priv *priv,
 		enum sx125x_fields field_id, u8 val)
 {
 	return regmap_field_write(priv->regmap_fields[field_id], val);
+}
+
+static inline int sx125x_field_force_write(struct sx125x_priv *priv,
+                enum sx125x_fields field_id, u8 val)
+{
+        return regmap_field_force_write(priv->regmap_fields[field_id], val);
 }
 
 static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap *regmap)
@@ -135,6 +189,159 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 		}
 	}
 
+	if (true) {
+		/* Tx gain and trim */
+		ret = sx125x_field_write(priv, F_TX_MIXER_GAIN, 14);
+		if (ret) {
+			dev_err(dev, "setting TX mixer gain failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_TX_DAC_GAIN, 2);
+		if (ret) {
+			dev_err(dev, "setting TX dac gain failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_TX_ANA_BW, 0);
+		if (ret) {
+			dev_err(dev, "setting TX ana bw failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_TX_PLL_BW, 1);
+		if (ret) {
+			dev_err(dev, "setting TX pll bw failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_TX_DAC_BW, 5);
+		if (ret) {
+			dev_err(dev, "setting TX ana bw failed\n");
+			return ret;
+		}
+
+		/* Rx gain and trim */
+		ret = sx125x_field_write(priv, F_RX_LNA_Z_IN, 1);
+		if (ret) {
+			dev_err(dev, "setting RC lna z in failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_RX_BB_GAIN, 12);
+		if (ret) {
+			dev_err(dev, "setting RX bb gain failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_RX_LNA_GAIN, 1);
+		if (ret) {
+			dev_err(dev, "setting RX lna z in failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_RX_BB_BW, 12);
+		if (ret) {
+			dev_err(dev, "setting RX bb bw failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_RX_ADC_TRIM, 6);
+		if (ret) {
+			dev_err(dev, "setting RX adc trim failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_RX_ADC_BW, 7);
+		if (ret) {
+			dev_err(dev, "setting RX adc bw failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_RX_ADC_TEMP, 0);
+		if (ret) {
+			dev_err(dev, "setting RX adc temp failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_write(priv, F_RX_PLL_BW, 0);
+		if (ret) {
+			dev_err(dev, "setting RX pll bw failed\n");
+			return ret;
+		}
+	}
+
+	if (true) {
+		u32 part_int, part_frac;
+
+		part_int = 868500000 / (SX125X_32MHz_FRAC << 8);
+		part_frac = ((868500000 %
+			(SX125X_32MHz_FRAC << 8)) << 8) / SX125X_32MHz_FRAC;
+
+		ret = regmap_write(priv->regmap, SX125X_FRF_RX_MSB,
+				   0xFF & part_int);
+		if (ret) {
+			dev_err(dev, "RX MSB write failed\n");
+			return ret;
+		}
+
+		ret = regmap_write(priv->regmap, SX125X_FRF_RX_MID,
+				   0xFF & (part_frac >> 8));
+		if (ret) {
+			dev_err(dev, "RX MID write failed\n");
+			return ret;
+		}
+
+		ret = regmap_write(priv->regmap, SX125X_FRF_RX_LSB,
+				   0xFF & part_frac);
+		if (ret) {
+			dev_err(dev, "RX LSB write failed\n");
+			return ret;
+		}
+	}
+
+	/* TODO start pll*/
+	ret = sx125x_field_write(priv, F_STDBY_EN, 1);
+	if (ret) {
+		dev_err(dev, "setting standby enable failed\n");
+		return ret;
+	}
+
+	i = 5;
+	do {
+		if (i == 0) {
+			dev_err(dev, "RX PLL lock failed\n");
+			return -ETIMEDOUT;
+		}
+
+		ret = sx125x_field_force_write(priv, F_RX_EN, 0);
+		if (ret) {
+			dev_err(dev, "setting RX enable failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_force_write(priv, F_RX_EN, 1);
+		if (ret) {
+			dev_err(dev, "setting RX enable failed\n");
+			return ret;
+		}
+
+		i--;
+		usleep_range(1000, 1200);
+		ret = regmap_field_read(priv->regmap_fields[F_PLL_LOCK_RX],
+					&val);
+		if (ret) {
+			dev_err(dev, "RX pll lock read failed (%d)\n", ret);
+			return ret;
+		}
+	} while (!val);
+/*
+	if (regmap_field_read_poll_timeout(priv->regmap_fields[F_PLL_LOCK_RX],
+					   val, val, 1000, 5000)) {
+		dev_err(dev, "RX PLL lock failed\n");
+		return -ETIMEDOUT;
+	}
+*/
 	dev_info(dev, "SX125x module probed\n");
 
 	return 0;
