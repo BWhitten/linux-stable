@@ -98,6 +98,40 @@ out:
 	return ret;
 }
 
+static int dgram_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
+                         int noblock, int flags, int *addr_len)
+{
+	struct dgram_sock *dgram = dgram_sk(sk);
+        struct sk_buff *skb;
+        size_t copied = 0;
+        int err = -EOPNOTSUPP;
+
+        skb = skb_recv_datagram(sk, flags, noblock, &err);
+        if (!skb)
+                goto out;
+
+        copied = skb->len;
+        if (len < copied) {
+                msg->msg_flags |= MSG_TRUNC;
+                copied = len;
+        }
+
+        err = skb_copy_datagram_msg(skb, 0, msg, copied);
+        if (err)
+                goto done;
+
+        sock_recv_ts_and_drops(msg, sk, skb);
+
+        if (flags & MSG_TRUNC)
+                copied = skb->len;
+done:
+        skb_free_datagram(sk, skb);
+out:
+        if (err)
+                return err;
+        return copied;
+}
+
 static int dgram_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 {
 	struct sock *sk = sock->sk;
