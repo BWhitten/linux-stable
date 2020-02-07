@@ -88,6 +88,7 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	/* PAGE */
 	[F_SOFT_RESET]          = REG_FIELD(SX1301_PAGE, 7, 7),
 	/* GEN */
+	[F_CON_MODEM_EN]        = REG_FIELD(SX1301_GEN,  1, 1),
 	[F_GLOBAL_EN]           = REG_FIELD(SX1301_GEN,  3, 3),
 	/* CKEN */
 	[F_CLK32M_EN]           = REG_FIELD(SX1301_CKEN, 0, 0),
@@ -596,7 +597,10 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		return ret;
 	}
 
-	val = BIT(4); /* with DAC gain=3 */
+	val = BIT(0);
+	val |= BIT(1);
+	val |= BIT(2);
+	val |= BIT(4); /* with DAC gain=3 */
 	if (false)
 		val |= BIT(5); /* SX1255 */
 
@@ -670,6 +674,23 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		ret = sx130x_agc_ram_read(priv, 0xB8 + i, &priv->cal_table[1].q[i]);
 		if (ret)
 			return ret;
+	}
+
+	return 0;
+}
+
+static int sx130x_enable_correlators(struct sx130x_priv *priv)
+{
+	int ret;
+	int i;
+
+	for (i = 0; i < 8; i++) {
+		/* Multi */
+		ret = regmap_write(priv->regmap, SX1301_COR0DETEN + i, 0x7E);
+		if (ret) {
+			dev_err(priv->dev, "correlator %d setup failed\n", i);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -854,7 +875,7 @@ static int sx130x_agc_init(struct sx130x_priv *priv)
 	/* End AGC firmware init and check status */
 	/* TODO load the intended value of radio_select here
 	 * LORA IF mapping to radio A/B (per bit, 0=A, 1=B) */
-	ret = sx130x_agc_transaction(priv, 0, &val);
+	ret = sx130x_agc_transaction(priv, 0x0F, &val);
 	if (ret) {
 		netdev_err(netdev, "AGC radio select failed\n");
 		return ret;
@@ -1098,6 +1119,8 @@ static int sx130x_rx_packets(struct sx130x_priv *priv)
 		ret = regmap_write(priv->regmap, SX1301_RPNS, 0);
 		if (ret)
 			break;
+
+		netdev_dbg(netdev, "SX1301 recieved a packet\n");
 	}
 
 err_unlock:
@@ -1172,11 +1195,62 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	/* TODO Configure lora multi demods, bitfield of active */
 
 	/* TODO Load concentrator multi channel frequencies */
+	ret = regmap_write(priv->regmap, SX1301_IF0L,
+				IF_HZ_TO_REG(-400000) & 0xFF);
+	if (ret) {
+		dev_err(priv->dev, "IF0L failed\n");
+		return ret;
+	}
+	ret = regmap_write(priv->regmap, SX1301_IF0H,
+				(IF_HZ_TO_REG(-400000) >> 8) & 0xFF);
+	if (ret) {
+		dev_err(priv->dev, "IF0H failed\n");
+		return ret;
+	}
+	ret = regmap_write(priv->regmap, SX1301_IF1L,
+				IF_HZ_TO_REG(-200000) & 0xFF);
+	if (ret) {
+		dev_err(priv->dev, "IF1L failed\n");
+		return ret;
+	}
+	ret = regmap_write(priv->regmap, SX1301_IF1H,
+				(IF_HZ_TO_REG(-200000) >> 8) & 0xFF);
+	if (ret) {
+		dev_err(priv->dev, "IF1H failed\n");
+		return ret;
+	}
+	ret = regmap_write(priv->regmap, SX1301_IF2L, 0x00);
+	if (ret) {
+		dev_err(priv->dev, "IF2L failed\n");
+		return ret;
+	}
+	ret = regmap_write(priv->regmap, SX1301_IF2H, 0x00);
+	if (ret) {
+		dev_err(priv->dev, "IF2H failed\n");
+		return ret;
+	}
 
 	/* TODO enable the correlator on enabled frequencies */
+	ret = sx130x_enable_correlators(priv);
+	if (ret)
+		goto err_firmware;
 
 	/* TODO PPM, and modem enable */
+	ret = regmap_write(priv->regmap, SX1301_MISC_CFG2, 0x60);
+	if (ret) {
+		dev_err(priv->dev, "PPM offset failed\n");
+		return ret;
+	}
 
+	ret = sx130x_field_write(priv, F_CON_MODEM_EN, 1);
+	if (ret) {
+		dev_err(priv->dev, "enable connectrator modem failed\n");
+		goto err_reg;
+	}
+
+	/* TODO turn on IF8 */
+
+	/* TODO turn on FSK IF9 */
 	ret = sx130x_load_all_firmware(priv);
 	if (ret)
 		goto err_firmware;
