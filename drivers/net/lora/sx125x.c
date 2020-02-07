@@ -121,6 +121,7 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 {
 	struct sx125x_priv *priv;
 	unsigned int val;
+	const char *rname;
 	int ret;
 	int i;
 
@@ -156,7 +157,8 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 		dev_info(dev, "SX125x version: %02x\n", val);
 	}
 
-	if (false) {
+	rname = dev_name(dev);
+	if (rname[strlen(rname) - 1] == 'b') {
 		ret = sx125x_field_write(priv, F_CLK_OUT, 1);
 		if (ret) {
 			dev_err(dev, "enabling clock output failed\n");
