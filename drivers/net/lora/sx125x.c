@@ -166,6 +166,14 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 		}
 
 		dev_info(dev, "enabling clock output\n");
+	} else {
+		ret = sx125x_field_write(priv, F_CLK_OUT, 0);
+		if (ret) {
+			dev_err(dev, "disabling clock output failed\n");
+			return ret;
+		}
+
+		dev_info(dev, "disabling clock output\n");
 	}
 
 	/* TODO Only needs setting on radio on the TX path */
