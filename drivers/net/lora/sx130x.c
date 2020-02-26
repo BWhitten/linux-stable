@@ -243,7 +243,7 @@ struct sx130x_radio_cal {
 	struct sx130x_cal_table table[8];
 	s8 amp;
 	s8 phi;
-	u8 img_rej;
+	unsigned int img_rej;
 };
 
 struct sx130x_priv {
@@ -343,6 +343,11 @@ static bool sx130x_volatile_reg(struct device *dev, unsigned int reg)
 	case SX1301_RADIO_B_SPI_DATA_RB:
 	case SX1301_DBG_ARB_MCU_RAM_DATA:
 	case SX1301_DBG_AGC_MCU_RAM_DATA:
+
+	case SX1301_IQ_MISMATCH_A_AMP_COEFF:
+	case SX1301_IQ_MISMATCH_A_PHI_COEFF:
+	case SX1301_IQ_MISMATCH_B_AMP_COEFF:
+	case SX1301_IQ_MISMATCH_B_PHI_COEFF:
 		return true;
 	default:
 		return false;
@@ -409,7 +414,7 @@ static int sx130x_soft_reset(struct sx130x_priv *priv)
 	int ret;
 
 	regcache_cache_bypass(priv->regmap, true);
-	ret = sx130x_field_write(priv, F_SOFT_RESET, 1);
+	ret = sx130x_field_force_write(priv, F_SOFT_RESET, 1);
 	regcache_cache_bypass(priv->regmap, false);
 	if (ret)
 		return ret;
@@ -649,6 +654,12 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		return -EIO;
 	}
 
+	ret = regmap_write(priv->regmap, SX1301_PAGE, 3);
+	if (ret) {
+		dev_err(priv->dev, "page selection failed\n");
+		return ret;
+	}
+
 	ret = sx130x_field_force_write(priv, F_EMERGENCY_FORCE_HOST_CTRL, 0);
 	if (ret) {
 		dev_err(priv->dev, "emergency force failed\n");
@@ -677,6 +688,60 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 	}
 
 	/* Read back the I/Q calibration table per radio */
+	ret = regmap_read(priv->regmap, SX1301_IQ_MISMATCH_A_AMP_COEFF, &val);
+	if (ret) {
+		dev_err(priv->dev, "IQ mismatch A AMP coeff read failed\n");
+		return ret;
+	}
+	dev_dbg(priv->dev, "RX A: Amp: %02X\n", val);
+	val &= 0x3F;
+	priv->radio_table[0].amp = (val > 31) ? val - 64: val;
+
+	ret = regmap_read(priv->regmap, SX1301_IQ_MISMATCH_A_PHI_COEFF, &val);
+	if (ret) {
+		dev_err(priv->dev, "IQ mismatch A PHI coeff read failed\n");
+		return ret;
+	}
+	dev_dbg(priv->dev, "RX A: Phi: %02X\n", val);
+	val &= 0x3F;
+	priv->radio_table[0].phi = (val > 31) ? val - 64: val;
+
+	ret = sx130x_agc_ram_read(priv, 0xD0, &priv->radio_table[0].img_rej);
+	if (ret)
+		return ret;
+	dev_dbg(priv->dev, "RX A IQ mismatch: Amp: %3d, Phi: %3d, Rej: %3d dB\n",
+		priv->radio_table[0].amp,
+		priv->radio_table[0].phi,
+		priv->radio_table[0].img_rej);
+
+	ret = regmap_read(priv->regmap, SX1301_IQ_MISMATCH_B_AMP_COEFF, &val);
+	if (ret) {
+		dev_err(priv->dev, "IQ mismatch B AMP coeff read failed\n");
+		return ret;
+	}
+	dev_dbg(priv->dev, "RX B: Amp: %02X\n", val);
+	val &= 0x3F;
+	priv->radio_table[1].amp = (val > 31) ? val - 64: val;
+
+	ret = regmap_read(priv->regmap, SX1301_IQ_MISMATCH_B_PHI_COEFF, &val);
+	if (ret) {
+		dev_err(priv->dev, "IQ mismatch B PHI coeff read failed\n");
+		return ret;
+	}
+	dev_dbg(priv->dev, "RX B: Phi: %02X\n", val);
+	val &= 0x3F;
+	priv->radio_table[1].phi = (val > 31) ? val - 64: val;
+
+	ret = sx130x_agc_ram_read(priv, 0xD1, &priv->radio_table[1].img_rej);
+	if (ret)
+		return ret;
+	dev_dbg(priv->dev, "RX B IQ mismatch: Amp: %3d, Phi: %3d, Rej: %3d dB\n",
+		priv->radio_table[1].amp,
+		priv->radio_table[1].phi,
+		priv->radio_table[1].img_rej);
+
+	dev_dbg(priv->dev, "Radio\tA\t\t\tB\n");
+	dev_dbg(priv->dev, "Offset\tI\tQ\tRej\tI\tQ\tRej\n");
 	for (i = 0; i < 8; i++) {
 		ret = sx130x_agc_ram_read(priv, 0xA0 + i, &priv->radio_table[0].table[i].offset_i);
 		if (ret)
@@ -701,6 +766,14 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		ret = sx130x_agc_ram_read(priv, 0xC8 + i, &priv->radio_table[1].table[i].offset_rej);
 		if (ret)
 			return ret;
+
+		dev_dbg(priv->dev, "%d:\t%d\t%d\t%d\t%d\t%d\t%d\n", i + 8,
+			priv->radio_table[0].table[i].offset_i,
+			priv->radio_table[0].table[i].offset_q,
+			priv->radio_table[0].table[i].offset_rej,
+			priv->radio_table[1].table[i].offset_i,
+			priv->radio_table[1].table[i].offset_q,
+			priv->radio_table[1].table[i].offset_rej);
 	}
 
 	return 0;
