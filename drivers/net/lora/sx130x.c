@@ -339,6 +339,11 @@ static bool sx130x_volatile_reg(struct device *dev, unsigned int reg)
 	case SX1301_RADIO_B_SPI_DATA_RB:
 	case SX1301_DBG_ARB_MCU_RAM_DATA:
 	case SX1301_DBG_AGC_MCU_RAM_DATA:
+
+	case SX1301_IQ_MISMATCH_A_AMP_COEFF:
+	case SX1301_IQ_MISMATCH_A_PHI_COEFF:
+	case SX1301_IQ_MISMATCH_B_AMP_COEFF:
+	case SX1301_IQ_MISMATCH_B_PHI_COEFF:
 		return true;
 	default:
 		return false;
@@ -680,8 +685,8 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		return ret;
 	}
 	dev_dbg(priv->dev, "RX A: Amp: %02X\n", val);
-	val &= 0x2F;
-	priv->radio_table[0].amp = (s8)((val > 31) ? val - 64: val);
+	val &= 0x3F;
+	priv->radio_table[0].amp = (val > 31) ? val - 64: val;
 
 	ret = regmap_read(priv->regmap, SX1301_IQ_MISMATCH_A_PHI_COEFF, &val);
 	if (ret) {
@@ -689,8 +694,8 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		return ret;
 	}
 	dev_dbg(priv->dev, "RX A: Phi: %02X\n", val);
-	val &= 0x2F;
-	priv->radio_table[0].phi = (s8)((val > 31) ? val - 64: val);
+	val &= 0x3F;
+	priv->radio_table[0].phi = (val > 31) ? val - 64: val;
 
 	ret = sx130x_agc_ram_read(priv, 0xD0, &priv->radio_table[0].img_rej);
 	if (ret)
@@ -705,18 +710,18 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		dev_err(priv->dev, "IQ mismatch B AMP coeff read failed\n");
 		return ret;
 	}
-	dev_dbg(priv->dev, "RX A: Amp: %02X\n", val);
-	val &= 0x2F;
-	priv->radio_table[1].amp = (s8)((val > 31) ? val - 64: val);
+	dev_dbg(priv->dev, "RX B: Amp: %02X\n", val);
+	val &= 0x3F;
+	priv->radio_table[1].amp = (val > 31) ? val - 64: val;
 
 	ret = regmap_read(priv->regmap, SX1301_IQ_MISMATCH_B_PHI_COEFF, &val);
 	if (ret) {
 		dev_err(priv->dev, "IQ mismatch B PHI coeff read failed\n");
 		return ret;
 	}
-	dev_dbg(priv->dev, "RX A: Phi: %02X\n", val);
-	val &= 0x2F;
-	priv->radio_table[1].phi = (s8)((val > 31) ? val - 64: val);
+	dev_dbg(priv->dev, "RX B: Phi: %02X\n", val);
+	val &= 0x3F;
+	priv->radio_table[1].phi = (val > 31) ? val - 64: val;
 
 	ret = sx130x_agc_ram_read(priv, 0xD1, &priv->radio_table[1].img_rej);
 	if (ret)
