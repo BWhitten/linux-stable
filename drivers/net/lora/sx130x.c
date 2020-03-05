@@ -1057,28 +1057,34 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 
 	memcpy((void *)&buff[16], skb->data, skb->len);
 
+	mutex_lock(&priv->io_lock);
+
 	/* Reset any transmissions */
 	ret = regmap_write(priv->regmap, SX1301_TX_TRIG, 0);
 	if (ret)
-		return ret;
+		goto err_unlock;
 
 	/* Put the buffer into the tranmit fifo */
 	ret = regmap_write(priv->regmap, SX1301_TX_DATA_BUF_ADDR, 0);
 	if (ret)
-		return ret;
+		goto err_unlock;
+
 	ret = regmap_noinc_write(priv->regmap, SX1301_TX_DATA_BUF_DATA, buff,
 				 skb->len + 16);
 	if (ret)
-		return ret;
+		goto err_unlock;
 
 	/* HACK just go for immediate transfer */
 	ret = sx130x_field_force_write(priv, F_TX_TRIG_IMMEDIATE, 1);
 	if (ret)
-		return ret;
+		goto err_unlock;
 
 	netdev_dbg(netdev, "Transmitting packet of size %d: ", skb->len);
 	for (i = 0; i < skb->len + 16; i++)
 		netdev_dbg(netdev, "%X", buff[i]);
+
+err_unlock:
+	mutex_unlock(&priv->io_lock);
 
 	return ret;
 }
@@ -1269,7 +1275,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 
 	ret = sx130x_fields_patch(priv);
 	if (ret)
-		return ret;
+		goto err_patch;
 
 	/* TODO Frequency time drift */
 
@@ -1280,35 +1286,35 @@ static int sx130x_loradev_open(struct net_device *netdev)
 				IF_HZ_TO_REG(-400000) & 0xFF);
 	if (ret) {
 		dev_err(priv->dev, "IF0L failed\n");
-		return ret;
+		goto err_freq;
 	}
 	ret = regmap_write(priv->regmap, SX1301_IF0H,
 				(IF_HZ_TO_REG(-400000) >> 8) & 0xFF);
 	if (ret) {
 		dev_err(priv->dev, "IF0H failed\n");
-		return ret;
+		goto err_freq;
 	}
 	ret = regmap_write(priv->regmap, SX1301_IF1L,
 				IF_HZ_TO_REG(-200000) & 0xFF);
 	if (ret) {
 		dev_err(priv->dev, "IF1L failed\n");
-		return ret;
+		goto err_freq;
 	}
 	ret = regmap_write(priv->regmap, SX1301_IF1H,
 				(IF_HZ_TO_REG(-200000) >> 8) & 0xFF);
 	if (ret) {
 		dev_err(priv->dev, "IF1H failed\n");
-		return ret;
+		goto err_freq;
 	}
 	ret = regmap_write(priv->regmap, SX1301_IF2L, 0x00);
 	if (ret) {
 		dev_err(priv->dev, "IF2L failed\n");
-		return ret;
+		goto err_freq;
 	}
 	ret = regmap_write(priv->regmap, SX1301_IF2H, 0x00);
 	if (ret) {
 		dev_err(priv->dev, "IF2H failed\n");
-		return ret;
+		goto err_freq;
 	}
 
 	/* TODO enable the correlator on enabled frequencies */
@@ -1320,7 +1326,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	ret = regmap_write(priv->regmap, SX1301_MISC_CFG2, 0x60);
 	if (ret) {
 		dev_err(priv->dev, "PPM offset failed\n");
-		return ret;
+		goto err_reg;
 	}
 
 	ret = sx130x_field_write(priv, F_CON_MODEM_EN, 1);
@@ -1373,11 +1379,11 @@ static int sx130x_loradev_open(struct net_device *netdev)
 
 	netif_start_queue(netdev);
 
-	return 0;
-
 err_irq:
 err_open:
 err_firmware:
+err_freq:
+err_patch:
 err_calibrate:
 err_reg:
 	mutex_unlock(&priv->io_lock);
