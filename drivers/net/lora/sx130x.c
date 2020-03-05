@@ -731,6 +731,8 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		priv->radio_table[1].phi,
 		priv->radio_table[1].img_rej);
 
+	dev_dbg(priv->dev, "Radio\tA\t\t\tB\n");
+	dev_dbg(priv->dev, "Offset\tI\tQ\tRej\tI\tQ\tRej\n");
 	for (i = 0; i < 8; i++) {
 		ret = sx130x_agc_ram_read(priv, 0xA0 + i, &priv->radio_table[0].table[i].offset_i);
 		if (ret)
@@ -755,6 +757,14 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		ret = sx130x_agc_ram_read(priv, 0xC8 + i, &priv->radio_table[1].table[i].offset_rej);
 		if (ret)
 			return ret;
+
+		dev_dbg(priv->dev, "%d:\t%d\t%d\t%d\t%d\t%d\t%d\n", i + 8,
+			priv->radio_table[0].table[i].offset_i,
+			priv->radio_table[0].table[i].offset_q,
+			priv->radio_table[0].table[i].offset_rej,
+			priv->radio_table[1].table[i].offset_i,
+			priv->radio_table[1].table[i].offset_q,
+			priv->radio_table[1].table[i].offset_rej);
 	}
 
 	return 0;
