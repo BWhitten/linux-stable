@@ -166,6 +166,8 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	[F_TX_FRAME_SYNCH_PEAK2_POS] = REG_FIELD(SX1301_TX_FRAME_SYNCH, 4, 7),
 
 	[F_FSK_TX_GAUSSIAN_SELECT_BT] = REG_FIELD(SX1301_FSK_TX, 1, 2),
+
+	[F_GPS_EN] = REG_FIELD(SX1301_GPS, 0, 0),
 };
 
 struct sx130x_tx_header {
@@ -1380,6 +1382,12 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	ret = sx130x_agc_init(priv);
 	if (ret)
 		goto err_firmware;
+
+	ret = sx130x_field_write(priv, F_GPS_EN, 1);
+	if (ret) {
+		dev_err(priv->dev, "enable GPS event capture failed\n");
+		goto err_reg;
+	}
 
 	ret = open_loradev(netdev);
 	if (ret)
