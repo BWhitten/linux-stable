@@ -148,6 +148,7 @@
 #define SX1301_DBG_AGC_MCU_RAM_DATA (SX1301_PAGE_BASE(2) + 0x41)
 #define SX1301_DBG_ARB_MCU_RAM_ADDR (SX1301_PAGE_BASE(2) + 0x50)
 #define SX1301_DBG_AGC_MCU_RAM_ADDR (SX1301_PAGE_BASE(2) + 0x51)
+#define SX1301_GPS		    (SX1301_PAGE_BASE(2) + 0x59)
 
 /* Page 3 */
 #define SX1301_EMERGENCY_FORCE_HOST_CTRL (SX1301_PAGE_BASE(3) + 0x7F)
@@ -227,6 +228,8 @@ enum sx130x_fields {
 
 	F_FSK_TX_GAUSSIAN_SELECT_BT,
 	F_FSK_TX_PSIZE,
+
+	F_GPS_EN,
 };
 
 struct regmap *sx130x_get_regmap(struct device *dev);
