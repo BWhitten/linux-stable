@@ -163,6 +163,7 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	[F_TX_START_DELAYL] = REG_FIELD(SX1301_TX_START_DELAYL, 0, 7), // 16 bit
 	[F_TX_START_DELAYH] = REG_FIELD(SX1301_TX_START_DELAYH, 0, 7),
 
+	[F_TX_GAIN] = REG_FIELD(SX1301_TX_CFG2, 0, 1),
 	[F_TX_SWAP_IQ] = REG_FIELD(SX1301_TX_CFG2, 7, 7),
 	[F_TX_FRAME_SYNCH_PEAK1_POS] = REG_FIELD(SX1301_TX_FRAME_SYNCH, 0, 3),
 	[F_TX_FRAME_SYNCH_PEAK2_POS] = REG_FIELD(SX1301_TX_FRAME_SYNCH, 4, 7),
@@ -1001,10 +1002,12 @@ static int sx130x_agc_init(struct sx130x_priv *priv)
 
 static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 {
-	int ret, i;
+	int ret, i, pow_index;
 	u8 buff[256 + 16];
 	struct sx130x_tx_header *hdr = (struct sx130x_tx_header *)buff;
 	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	struct sx130x_tx_gain_lut *tx_gain = &priv->tx_gain_lut[0];
+	struct sx130x_cal_table *cal;
 	u32					cfg_freq;
 	u32					cfg_bandwidth;
 	u8					cfg_sf;
@@ -1025,11 +1028,20 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 
 	/* TODO get start delay for this TX */
 
-	/* TODO interpret tx power, HACK just set max power */
+	/* Interpret TX power */
+	pow_index = 0;
+	for (i = priv->tx_gain_lut_size - 1; i > 0; i--) {
+		if (priv->tx_gain_lut[i].power <= cfg_tx_power) {
+			tx_gain = &priv->tx_gain_lut[i];
+			pow_index = i;
+			break;
+		}
+	}
 
 	/* TODO get TX imbalance for this pow index from calibration step */
+	/* HACK Set radio a */
+	cal = &priv->radio_table[0].table[tx_gain->mix_gain - 8];
 
-	/* TODO set the dig gain */
 
 	/* TODO set TX PLL freq based on radio used to TX */
 
@@ -1043,7 +1055,7 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 	hdr->start = 0; /* Start imediatly */
 	hdr->radio_select = 0; /* HACK Radio A transmit */
 	hdr->modulation_type = 0; /* HACK modulation LORA */
-	hdr->tx_power = 15; /* HACK power entry 15 */
+	hdr->tx_power = pow_index;
 
 	hdr->u.lora.crc16_en = 1; /* Enable CRC16 */
 
@@ -1100,6 +1112,20 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 	memcpy((void *)&buff[16], skb->data, skb->len);
 
 	mutex_lock(&priv->io_lock);
+
+	/* Load TX imbalance */
+	ret = regmap_write(priv->regmap, SX1301_TX_OFFSET_I, cal->offset_i);
+	if (ret)
+		goto err_unlock;
+
+	ret = regmap_write(priv->regmap, SX1301_TX_OFFSET_Q, cal->offset_q);
+	if (ret)
+		goto err_unlock;
+
+	/* Set digital gain from LUT */
+	ret = sx130x_field_force_write(priv, F_TX_GAIN, tx_gain->dig_gain);
+	if (ret)
+		goto err_unlock;
 
 	/* Reset any transmissions */
 	ret = regmap_write(priv->regmap, SX1301_TX_TRIG, 0);
