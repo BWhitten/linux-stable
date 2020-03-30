@@ -325,8 +325,6 @@ static const struct regmap_range_cfg sx130x_regmap_ranges[] = {
 static bool sx130x_volatile_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
-	case SX1301_PAGE:
-
 	case SX1301_MPD:
 	case SX1301_RPNS:
 	case SX1301_RPAPL:
@@ -412,7 +410,7 @@ static int sx130x_soft_reset(struct sx130x_priv *priv)
 	int ret;
 
 	regcache_cache_bypass(priv->regmap, true);
-	ret = sx130x_field_write(priv, F_SOFT_RESET, 1);
+	ret = sx130x_field_force_write(priv, F_SOFT_RESET, 1);
 	regcache_cache_bypass(priv->regmap, false);
 	if (ret)
 		return ret;
