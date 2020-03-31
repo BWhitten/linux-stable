@@ -1786,9 +1786,11 @@ int _regmap_write(struct regmap *map, unsigned int reg,
 	if (regmap_should_log(map))
 		dev_info(map->dev, "%x <= %x\n", reg, val);
 
+	ret = map->reg_write(context, reg, val);
+
 	trace_regmap_reg_write(map, reg, val);
 
-	return map->reg_write(context, reg, val);
+	return ret;
 }
 
 /**
