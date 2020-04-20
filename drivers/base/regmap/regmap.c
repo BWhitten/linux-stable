@@ -1950,6 +1950,7 @@ int regmap_noinc_write(struct regmap *map, unsigned int reg,
 		      const void *val, size_t val_len)
 {
 	size_t write_len;
+	bool bypass;
 	int ret;
 
 	if (!map->bus)
@@ -1964,6 +1965,9 @@ int regmap_noinc_write(struct regmap *map, unsigned int reg,
 		return -EINVAL;
 
 	map->lock(map->lock_arg);
+
+	bypass = map->cache_bypass;
+	map->cache_bypass = true;
 
 	if (!regmap_volatile(map, reg) || !regmap_writeable_noinc(map, reg)) {
 		ret = -EINVAL;
@@ -1983,6 +1987,7 @@ int regmap_noinc_write(struct regmap *map, unsigned int reg,
 	}
 
 out_unlock:
+	map->cache_bypass = bypass;
 	map->unlock(map->lock_arg);
 	return ret;
 }
