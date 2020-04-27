@@ -36,10 +36,43 @@ static inline struct dgram_sock *dgram_sk(const struct sock *sk)
 	return (struct dgram_sock *)sk;
 }
 
-static int dgram_bind(struct socket *sock, struct sockaddr *uaddr, int len)
+static int lora_sock_bind(struct socket *sock, struct sockaddr *uaddr,
+			  int addr_len)
+{
+        struct sockaddr_lorawan *addr = (struct sockaddr_lorawan *)uaddr;
+        struct sock *sk = sock->sk;
+
+        pr_debug("%s: bind address\n", __func__);
+        if (sk->sk_prot->bind)
+                return sk->sk_prot->bind(sk, uaddr, addr_len);
+
+        return sock_no_bind(sock, uaddr, addr_len);
+}
+
+static int lora_sock_ioctl(struct socket *sock, unsigned int cmd,
+                                 unsigned long arg)
+{
+	struct sock *sk = sock->sk;
+
+        pr_debug("%s: ioctl\n", __func__);
+        if (sk->sk_prot->ioctl)
+                return sk->sk_prot->ioctl(sk, cmd, arg);
+
+	return -ENOIOCTLCMD;
+}
+
+static int
+lora_sock_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
+{
+        struct sock *sk = sock->sk;
+
+        pr_debug("%s: going to send %zu bytes\n", __func__, len);
+        return sk->sk_prot->sendmsg(sk, msg, len);
+}
+
+static int dgram_bind(struct sock *sk, struct sockaddr *uaddr, int len)
 {
 	struct sockaddr_lora *addr = (struct sockaddr_lora *)uaddr;
-	struct sock *sk = sock->sk;
 	struct dgram_sock *dgram = dgram_sk(sk);
 	int ifindex;
 	int ret = 0;
@@ -98,10 +131,11 @@ out:
 	return ret;
 }
 
-static int dgram_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
-                         int noblock, int flags, int *addr_len)
+static int dgram_recvmsg(struct sock *sk, struct msghdr *msg,
+			   size_t len, int noblock, int flags, int *addr_len)
 {
 	struct dgram_sock *dgram = dgram_sk(sk);
+	DECLARE_SOCKADDR(struct sockaddr_lora *, addr, msg->msg_name);
         struct sk_buff *skb;
         size_t copied = 0;
         int err = -EOPNOTSUPP;
@@ -122,6 +156,19 @@ static int dgram_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 
         sock_recv_ts_and_drops(msg, sk, skb);
 
+	if (addr) {
+		memset(addr, 0, sizeof(*addr));
+		addr->lora_family = AF_LORA;
+		addr->lora_addr.tx.freq = lora_skb_prv(skb)->freq;
+		addr->lora_addr.tx.sf = lora_skb_prv(skb)->sf;
+		addr->lora_addr.tx.cr = lora_skb_prv(skb)->cr;
+		addr->lora_addr.tx.bw = lora_skb_prv(skb)->bw;
+		addr->lora_addr.tx.sync = lora_skb_prv(skb)->sync;
+		addr->lora_addr.tx.power = lora_skb_prv(skb)->power;
+
+		msg->msg_namelen = sizeof(*addr);
+	}
+
         if (flags & MSG_TRUNC)
                 copied = skb->len;
 done:
@@ -132,9 +179,8 @@ out:
         return copied;
 }
 
-static int dgram_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+static int dgram_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 {
-	struct sock *sk = sock->sk;
 	struct dgram_sock *dgram = dgram_sk(sk);
 	struct sk_buff *skb;
 	struct net_device *netdev;
@@ -202,14 +248,14 @@ err_sock_alloc_send_skb:
 	return ret;
 }
 
-static int dgram_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
+static int dgram_ioctl(struct sock *sk, int cmd, unsigned long arg)
 {
 	pr_debug("lora: %s\n", __func__);
 
 	return -ENOIOCTLCMD;
 }
 
-static int dgram_getname(struct socket *sock, struct sockaddr *uaddr,
+static int lora_sock_getname(struct socket *sock, struct sockaddr *uaddr,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
 			 int *len,
 #endif
@@ -242,7 +288,7 @@ static int dgram_getname(struct socket *sock, struct sockaddr *uaddr,
 #endif
 }
 
-static int dgram_release(struct socket *sock)
+static int lora_sock_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
 	struct dgram_sock *dgram;
@@ -278,20 +324,21 @@ static int dgram_release(struct socket *sock)
 
 const struct proto_ops dgram_proto_ops = {
 	.family		= PF_LORA,
-	.release	= dgram_release,
-	.bind		= dgram_bind,
+	.owner		= THIS_MODULE,
+	.release	= lora_sock_release,
+	.bind		= lora_sock_bind,
 	.connect	= sock_no_connect,
 	.socketpair	= sock_no_socketpair,
 	.accept		= sock_no_accept,
-	.getname	= dgram_getname,
+	.getname	= lora_sock_getname,
 	.poll		= datagram_poll,
-	.ioctl		= dgram_ioctl,
+	.ioctl		= lora_sock_ioctl,
 	.listen		= sock_no_listen,
 	.shutdown	= sock_no_shutdown,
 	.setsockopt	= sock_no_setsockopt,
 	.getsockopt	= sock_no_getsockopt,
-	.sendmsg	= dgram_sendmsg,
-	.recvmsg	= sock_no_recvmsg,
+	.sendmsg	= lora_sock_sendmsg,
+	.recvmsg	= sock_common_recvmsg,
 	.mmap		= sock_no_mmap,
 	.sendpage	= sock_no_sendpage,
 };
@@ -365,8 +412,12 @@ static int dgram_init(struct sock *sk)
 }
 
 struct proto dgram_proto __read_mostly = {
-	.name = "LoRa",
-	.owner = THIS_MODULE,
-	.obj_size = sizeof(struct dgram_sock),
-	.init = dgram_init,
+	.name		= "LoRa",
+	.owner		= THIS_MODULE,
+	.obj_size	= sizeof(struct dgram_sock),
+	.init		= dgram_init,
+	.bind		= dgram_bind,
+	.ioctl		= dgram_ioctl,
+	.sendmsg	= dgram_sendmsg,
+	.recvmsg	= dgram_recvmsg,
 };
