@@ -47,6 +47,8 @@ EXPORT_SYMBOL_GPL(open_loradev);
 
 void close_loradev(struct net_device *dev)
 {
+	if (netif_carrier_ok(dev))
+		netif_carrier_off(dev);
 }
 EXPORT_SYMBOL_GPL(close_loradev);
 
