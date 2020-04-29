@@ -210,12 +210,12 @@ struct sx130x_tx_header {
 
 struct sx130x_rx_meta {
 	u8	channel;
-	u8	sf:4,
+	u8	crc16_en:1,
 		cr:3,
-		crc16_en:1;
-	u8	snr_av;
-	u8	snr_min;
-	u8	snr_max;
+		sf:4;
+	s8	snr_av;
+	s8	snr_min;
+	s8	snr_max;
 	u8	rssi;
 	__be32	timestamp;
 	__be16	crc;
