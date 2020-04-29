@@ -1029,7 +1029,7 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 
 	/* HACK set to 868MHz */
 	hdr->tx_freq[0] = 217;
-	hdr->tx_freq[1] = 0;
+	hdr->tx_freq[1] = 32; /* HACK .5 */
 	hdr->tx_freq[2] = 0;
 
 	hdr->start = 0; /* Start imediatly */
