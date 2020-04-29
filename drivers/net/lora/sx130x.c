@@ -88,7 +88,9 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	/* PAGE */
 	[F_SOFT_RESET]          = REG_FIELD(SX1301_PAGE, 7, 7),
 	/* GEN */
+	[F_MBWSSF_MODEM_EN]     = REG_FIELD(SX1301_GEN,  0, 0),
 	[F_CON_MODEM_EN]        = REG_FIELD(SX1301_GEN,  1, 1),
+	[F_FSK_MODEM_EN]        = REG_FIELD(SX1301_GEN,  2, 2),
 	[F_GLOBAL_EN]           = REG_FIELD(SX1301_GEN,  3, 3),
 	/* CKEN */
 	[F_CLK32M_EN]           = REG_FIELD(SX1301_CKEN, 0, 0),
@@ -146,8 +148,10 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	[F_FSK_RX_INVERT] = REG_FIELD(SX1301_FSK_CFG1, 6, 6),
 	[F_FSK_PKT_MODE] = REG_FIELD(SX1301_FSK_CFG1, 7, 7),
 
+	[F_MODEM_INVERT_IQ] = REG_FIELD(SX1301_IQCFG, 1, 1),
 	[F_FSK_MODEM_INVERT_IQ] = REG_FIELD(SX1301_IQCFG, 5, 5),
 
+	[F_FSK_PSIZE] = REG_FIELD(SX1301_FSK_CFG2, 0, 2),
 	[F_FSK_CRC_EN] = REG_FIELD(SX1301_FSK_CFG2, 3, 3),
 	[F_FSK_DCFREE_ENC] = REG_FIELD(SX1301_FSK_CFG2, 4, 5),
 	[F_FSK_ERROR_OSR_TOL] = REG_FIELD(SX1301_FSK_ERROR_OSR_TOL, 0, 4),
@@ -166,6 +170,7 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	[F_TX_FRAME_SYNCH_PEAK2_POS] = REG_FIELD(SX1301_TX_FRAME_SYNCH, 4, 7),
 
 	[F_FSK_TX_GAUSSIAN_SELECT_BT] = REG_FIELD(SX1301_FSK_TX, 1, 2),
+	[F_FSK_TX_PSIZE] = REG_FIELD(SX1301_FSK_TX, 5, 7),
 
 	[F_GPS_EN] = REG_FIELD(SX1301_GPS, 0, 0),
 };
