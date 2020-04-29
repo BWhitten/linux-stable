@@ -1611,6 +1611,7 @@ static int sx130x_loradev_stop(struct net_device *netdev)
 	netdev_dbg(netdev, "%s", __func__);
 
 	netif_stop_queue(netdev);
+	cancel_delayed_work_sync(&priv->rx_work);
 	close_loradev(netdev);
 
 	destroy_workqueue(priv->wq);
