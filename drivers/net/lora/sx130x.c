@@ -1530,7 +1530,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 		goto err_reg;
 	}
 
-	ret = sx130x_field_write(priv, F_CON_MODEM_EN, 1);
+	ret = sx130x_field_force_write(priv, F_CON_MODEM_EN, 1);
 	if (ret) {
 		dev_err(priv->dev, "enable connectrator modem failed\n");
 		goto err_reg;
