@@ -791,6 +791,7 @@ static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_dev
 static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
+	unsigned int x;
 	int ret;
 
 	netdev_dbg(netdev, "%s", __func__);
@@ -825,6 +826,23 @@ static int sx130x_loradev_open(struct net_device *netdev)
 		goto err_patch;
 
 	/* TODO Frequency time drift */
+	x = 4096000000 / (868500000 >> 1);
+	/* dividend: (4*2048*1000000) >> 1, rescaled to avoid 32b overflow */
+    	x = ( x > 63 ) ? 63 : x; /* saturation */
+	ret = regmap_write(priv->regmap, SX1301_FREQ_TO_TIME_DRIFT, x);
+	if (ret) {
+		dev_err(priv->dev, "Freq to time drift failed\n");
+		goto err_freq;
+	}
+
+	x = 4096000000 / (868500000 >> 3); /* dividend: (16*2048*1000000) >> 3, rescaled to avoid 32b overflow */
+	x = ( x > 63 ) ? 63 : x; /* saturation */
+	ret = regmap_write(priv->regmap, SX1301_MBWSSF_FREQ_TO_TIME_DRIFT, x);
+	if (ret) {
+		dev_err(priv->dev, "MBWSSF Freq to time drift failed\n");
+		goto err_freq;
+	}
+
 
 	/* TODO Configure lora multi demods, bitfield of active */
 
@@ -858,6 +876,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 
 err_open:
 err_firmware:
+err_freq:
 err_patch:
 err_calibrate:
 err_reg:
