@@ -1424,6 +1424,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
 	int ret, irq;
+	unsigned int x;
 
 	netdev_dbg(netdev, "%s", __func__);
 
