@@ -1146,6 +1146,7 @@ static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_dev
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
 
+	netdev_dbg(netdev, "%s\n", __func__);
 	if (skb->protocol != htons(ETH_P_LORA)) {
 		kfree_skb(skb);
 		netdev->stats.tx_dropped++;
@@ -1170,6 +1171,7 @@ static void sx130x_tx_work_handler(struct work_struct *ws)
 	if (priv->tx_skb) {
 		ret = sx130x_tx(priv, priv->tx_skb);
 		if (ret) {
+			netdev_dbg(netdev, "TX returned: %d\n", ret);
 			netdev->stats.tx_errors++;
 		} else {
 			netdev->stats.tx_packets++;
