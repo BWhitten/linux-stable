@@ -27,6 +27,9 @@ struct sx130x_radio_device {
 	const struct regmap_bus *regmap_bus;
 	struct regmap *regmap;
 	unsigned int nr;
+
+	uint64_t freq;
+	int channel[5];
 };
 
 static inline struct sx130x_radio_device *to_sx130x_radio_device(struct device *dev)
