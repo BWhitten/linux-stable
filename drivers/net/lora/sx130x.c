@@ -999,6 +999,7 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 	struct net_device *netdev = dev_get_drvdata(priv->dev);
 	struct sx130x_tx_gain_lut *tx_gain = &priv->tx_gain_lut[0];
 	struct sx130x_cal_table *cal;
+	int pow_index;
 	u8 sf;
 
 	/* TODO general checks to make sure we CAN send */
@@ -1007,10 +1008,12 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 
 	/* TODO get start delay for this TX */
 
-	/* TODO interpret tx power, HACK just set max power */
+	/* Interpret tx power */
+	pow_index = 0;
 	for (i = priv->tx_gain_lut_size - 1; i > 0; i--) {
-		if (priv->tx_gain_lut[i].power <= 27) {
+		if (priv->tx_gain_lut[i].power <= lora_skb_prv(skb)->power) {
 			tx_gain = &priv->tx_gain_lut[i];
+			pow_index = i;
 			break;
 		}
 	}
@@ -1032,7 +1035,7 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 	hdr->start = 0; /* Start imediatly */
 	hdr->radio_select = 0; /* HACK Radio A transmit */
 	hdr->modulation_type = 0; /* HACK modulation LORA */
-	hdr->tx_power = 15; /* HACK power entry 15 */
+	hdr->tx_power = pow_index;
 
 	hdr->u.lora.crc16_en = 1; /* Enable CRC16 */
 
