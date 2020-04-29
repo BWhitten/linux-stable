@@ -1182,31 +1182,61 @@ static int sx130x_rx_packets(struct sx130x_priv *priv)
 	INIT_LIST_HEAD(&rx_list);
 
 	mutex_lock(&priv->io_lock);
-	ret = regmap_read(priv->regmap, SX1301_RPNS, &packets);
-	if (ret)
-		goto err_unlock;
 
-	while (packets--) {
+	netdev_dbg(netdev, "%s\n", __func__);
+
+	do {
+		ret = regmap_raw_read(priv->regmap, SX1301_RPNS, buff, 5);
+		if (ret)
+			goto err_unlock;
+
+		packets = buff[0];
+		if (packets == 0)
+			break;
+
+		netdev_dbg(netdev, "SX1301 processing %d packets\n", packets);
+		netdev_dbg(netdev, "FIFO content: %x %x %x %x %x\n",
+			   buff[0], buff[1], buff[2], buff[3], buff[4]);
+
+		crc = buff[3];
+		size = buff[4];
+/*
+		ret = regmap_read(priv->regmap, SX1301_RPS, &crc);
+ 		if (ret)
+ 			break;
+*/		netdev_dbg(netdev, "SX1301 packet CRC: %02X\n", crc);
+
+/*		ret = regmap_read(priv->regmap, SX1301_RPPS, &size);
+		if (ret)
+			break;
+*/		netdev_dbg(netdev, "SX1301 packet size: %02X\n", size);
+
+		ret = regmap_noinc_read(priv->regmap, SX1301_RX_DATA_BUF_DATA,
+					buff,
+					size + sizeof(struct sx130x_rx_meta));
+		if (ret)
+			break;
+		netdev_dbg(netdev, "SX1301 packet read\n");
+		print_hex_dump_debug(" ", DUMP_PREFIX_NONE, 16, 1,
+				     buff,
+				     size + sizeof(struct sx130x_rx_meta),
+				     true);
+
+		/* Advance FIFO */
+		ret = regmap_write(priv->regmap, SX1301_RPNS, 0);
+		if (ret)
+			break;
+		netdev_dbg(netdev, "SX1301 packet advanced\n");
+
 		skb = alloc_lora_skb(netdev, NULL);
 		if (unlikely(!skb))
 			break;
-
-		ret = regmap_read(priv->regmap, SX1301_RPS, &crc);
-		if (ret)
-			break;
-
-		ret = regmap_read(priv->regmap, SX1301_RPPS, &size);
-		if (ret)
-			break;
-
-		ret = regmap_noinc_read(priv->regmap, SX1301_RX_DATA_BUF_DATA,
-					buff, size + sizeof(struct sx130x_rx_meta));
-		if (ret)
-			break;
+		netdev_dbg(netdev, "SX1301 skb allocated\n");
 
 		memcpy(skb_put(skb, size), buff, size);
 
-		meta = (struct sx130x_rx_meta *)buff + size;
+		meta = (struct sx130x_rx_meta *)(buff + size);
+
 		lora_skb_prv(skb)->ifindex = netdev->ifindex;
 		lora_skb_prv(skb)->freq = meta->channel; /* TODO resolve channel with rx frequency */
 		lora_skb_prv(skb)->sf = meta->sf;
@@ -1224,31 +1254,46 @@ static int sx130x_rx_packets(struct sx130x_priv *priv)
 			lora_skb_prv(skb)->cr = 8; /* CR 4/8 */
 			break;
 		default:
-			goto err_unlock;
+			continue;
 		}
 		lora_skb_prv(skb)->bw = 125; /* TODO resolve bw with the listening channel */
 		lora_skb_prv(skb)->snr = meta->snr_av; /* / 4 ? */
 		lora_skb_prv(skb)->rssi = meta->rssi;
 
+		netdev_dbg(netdev, "Channel: %d, SF: %d, CR 4/%d, SNR AV: %d.%d, RSSI: %d.%d, CRC: %04X ", meta->channel, meta->sf, lora_skb_prv(skb)->cr, (meta->snr_av /4),(+meta->snr_av % 4) * 25, (meta->rssi /4),(+meta->rssi % 4) * 25, meta->crc);
+
 		/* TODO do we need CRC and CRC status ? */
+		switch(crc & 0x07) {
+			case 5:
+				lora_skb_prv(skb)->crc = LORA_CRC_OK;
+				netdev_dbg(netdev, "CRC OK\n");
+				break;
+			case 7:
+				lora_skb_prv(skb)->crc = LORA_CRC_BAD;
+				netdev_dbg(netdev, "CRC BAD\n");
+				break;
+			case 1:
+				lora_skb_prv(skb)->crc = LORA_NO_CRC;
+				netdev_dbg(netdev, "NO CRC\n");
+				break;
+			default:
+				lora_skb_prv(skb)->crc = UNDEFINED;
+		}
 		/* TODO timestamp of reception */
 
 		/* Add to list, will pass up later */
 		list_add_tail(&skb->list, &rx_list);
 
-		/* Advance FIFO */
-		ret = regmap_write(priv->regmap, SX1301_RPNS, 0);
-		if (ret)
-			break;
-
 		netdev_dbg(netdev, "SX1301 recieved a packet\n");
-	}
+	} while (--packets);
 
 err_unlock:
 	mutex_unlock(&priv->io_lock);
 
 	/* Receive any packets we queued up */
 	netif_receive_skb_list(&rx_list);
+
+	netdev_dbg(netdev, "SX1301 rx ending, ret: %d\n", ret);
 
 	return ret;
 }
