@@ -976,7 +976,7 @@ static int sx130x_agc_init(struct sx130x_priv *priv)
 	/* End AGC firmware init and check status */
 	/* TODO load the intended value of radio_select here
 	 * LORA IF mapping to radio A/B (per bit, 0=A, 1=B) */
-	ret = sx130x_agc_transaction(priv, 0x0F, &val);
+	ret = sx130x_agc_transaction(priv, 0x07, &val);
 	if (ret) {
 		netdev_err(netdev, "AGC radio select failed\n");
 		return ret;
