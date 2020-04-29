@@ -282,10 +282,16 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 	}
 
 	if (true) {
-		u32 part_int, part_frac;
+		u32 part_int, part_frac, freq;
 
-		part_int = 868500000 / (SX125X_32MHz_FRAC << 8);
-		part_frac = ((868500000 %
+		if (rname[strlen(rname) - 1] == 'b') {
+			freq = 867500000;
+		} else {
+			freq = 868500000;
+		}
+
+		part_int = freq / (SX125X_32MHz_FRAC << 8);
+		part_frac = ((freq %
 			(SX125X_32MHz_FRAC << 8)) << 8) / SX125X_32MHz_FRAC;
 
 		ret = regmap_write(priv->regmap, SX125X_FRF_RX_MSB,
