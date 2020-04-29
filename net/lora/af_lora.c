@@ -113,11 +113,61 @@ static const struct net_proto_family lora_net_proto_family = {
 	.create = lora_create,
 };
 
+static int
+lora_dgram_deliver(struct net_device *ndev, struct sk_buff *skb)
+{
+        int ret = NET_RX_SUCCESS;
+
+        skb = skb_share_check(skb, GFP_ATOMIC);
+        if (!skb)
+                return NET_RX_DROP;
+
+        if (sock_queue_rcv_skb(skb->sk, skb) < 0)
+                goto lora_dgram_deliver_err;
+
+        return ret;
+
+lora_dgram_deliver_err:
+        kfree_skb(skb);
+        ret = NET_RX_DROP;
+        return ret;
+}
+
+static int lora_rcv(struct sk_buff *skb, struct net_device *ndev,
+        	    struct packet_type *pt, struct net_device *orig_ndev)
+{
+
+	pr_debug("lora: %s\n", __func__);
+
+        if (!netif_running(ndev))
+                goto lora_rcv_drop;
+
+        if (!net_eq(dev_net(ndev), &init_net))
+                goto lora_rcv_drop;
+
+        if (ndev->type != ARPHRD_LORA)
+                goto lora_rcv_drop;
+
+        if (skb->pkt_type != PACKET_OTHERHOST)
+                return lora_dgram_deliver(ndev, skb);
+
+lora_rcv_drop:
+        kfree_skb(skb);
+        return NET_RX_DROP;
+}
+
+
+static struct packet_type lora_packet_type = {
+        .type           = htons(ETH_P_LORA),
+        .func           = lora_rcv,
+};
+
 static __init int lora_init(void)
 {
 	int ret;
 
 	pr_debug("lora: init\n");
+	pr_debug("lora: test\n");
 
 	ret = proto_register(&dgram_proto, 1);
 	if (ret)
@@ -126,6 +176,8 @@ static __init int lora_init(void)
 	ret = sock_register(&lora_net_proto_family);
 	if (ret)
 		goto err_sock;
+
+//	dev_add_pack(&lora_packet_type);
 
 	return 0;
 
@@ -139,6 +191,7 @@ static __exit void lora_exit(void)
 {
 	pr_debug("lora: exit\n");
 
+//	dev_remove_pack(&lora_packet_type);
 	sock_unregister(PF_LORA);
 	proto_unregister(&dgram_proto);
 }
