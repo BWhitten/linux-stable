@@ -43,6 +43,8 @@ static const struct sx130x_fields_sequence sx130x_regmap_fields_patch[] = {
 	{F_DEC_GAIN_OFFSET,		7},
 	{F_CHAN_GAIN_OFFSET,		6},
 
+	{F_MODEM_INVERT_IQ,		1},
+
 	/* LoRa 'multi' demodulator setup */
 	{F_SNR_AVG_CST,			3},
 	{F_FRAME_SYNCH_PEAK1_POS,	3}, // Public LoRa network
