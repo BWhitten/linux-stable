@@ -1108,6 +1108,11 @@ static int sx130x_tx(struct sx130x_priv *priv, struct sk_buff *skb)
 
 	/* TODO 2 Msb in tx_freq0 for large narrow filtering, unset for now */
 	hdr->tx_freq[0] &= 0x3F;
+	if (cfg_bandwidth == 125) {
+		hdr->tx_freq[0] |= 0x40;
+	} else if (cfg_bandwidth == 500) {
+		hdr->tx_freq[0] |= 0x80;
+	}
 
 	/* Copy the TX data into the buffer ready to go */
 
