@@ -22,6 +22,7 @@ static inline struct cfglora_registered_phy *to_registered_phy(struct lora_phy *
 }
 
 struct cfglora_registered_phy *cfglora_get_phy_by_ifindex(int ifindex);
+struct cfglora_registered_phy *cfglora_rdev_from_attrs(struct nlattr **attrs);
 
 int __init nllora_init(void);
 void __exit nllora_exit(void);
