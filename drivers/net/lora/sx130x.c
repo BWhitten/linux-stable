@@ -24,6 +24,7 @@
 #include <linux/lora/dev.h>
 #include <linux/lora/skb.h>
 #include <linux/spi/spi.h>
+#include <net/cfglora.h>
 
 #include "sx130x.h"
 
@@ -260,6 +261,9 @@ struct sx130x_priv {
 	struct gpio_desc	*gpio[SX1301_NUM_GPIOS];
 	struct regmap		*regmap;
 	struct regmap_field	*regmap_fields[ARRAY_SIZE(sx130x_regmap_fields)];
+
+	struct lora_phy		*phy;
+
 	struct mutex		io_lock;
 	void			*drvdata;
 	struct sx130x_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];
@@ -1637,6 +1641,22 @@ static const struct net_device_ops sx130x_net_device_ops = {
 	.ndo_start_xmit = sx130x_loradev_start_xmit,
 };
 
+int sx130x_lora_get_freq(struct lora_phy *phy, u32 *val)
+{
+	struct sx130x_priv *priv = netdev_priv(phy->netdev);
+
+	netdev_dbg(phy->netdev, "%s", __func__);
+
+	if (val)
+		*val = 868000000;
+
+	return 0;
+}
+
+struct cfglora_ops sx130x_lora_device_ops = {
+        .get_freq = sx130x_lora_get_freq,
+};
+
 int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 {
 	struct device *dev = regmap_get_device(regmap);
@@ -1656,6 +1676,10 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 	priv = netdev_priv(netdev);
 	priv->regmap = regmap;
 	priv->rst_gpio = rst;
+
+	priv->phy = devm_lora_phy_new(dev, &sx130x_lora_device_ops, 0);
+	priv->phy->netdev = netdev;
+	lora_phy_register(priv->phy);
 
 	mutex_init(&priv->io_lock);
 
@@ -1836,7 +1860,9 @@ EXPORT_SYMBOL_GPL(sx130x_probe);
 int sx130x_remove(struct device *dev)
 {
 	struct net_device *netdev = dev_get_drvdata(dev);
+	struct sx130x_priv *priv = netdev_priv(netdev);
 
+	lora_phy_unregister(priv->phy);
 	unregister_loradev(netdev);
 
 	dev_info(dev, "SX1301 module removed\n");
