@@ -105,8 +105,8 @@ examples:
         spi-max-frequency = <8000000>;
 
         semtech,power-lut = /bits/ 8 < 0xFD 0 0 3  9 >,
-                                     <    3 0 0 3 12 >,
-                                     <    4 0 0 3 13 >;
+                            /bits/ 8 <    3 0 0 3 12 >,
+                            /bits/ 8 <    4 0 0 3 13 >;
 
         radio-spi {
           #address-cells = <1>;
