@@ -78,8 +78,6 @@ properties:
         properties:
           reg:
             maxItems: 1
-            minimum: 0
-            maximum: 1
         required:
           - reg
 
