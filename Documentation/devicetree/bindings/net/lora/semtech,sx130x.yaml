@@ -39,15 +39,14 @@ properties:
 
   semtech,power-lut:
     description: Power lookup table for the concentrator.
-    minItems: 1
-    maxItems: 16
     allOf:
-      - $ref: "/schemas/types.yaml#/definitions/int8-matrix"
-      - items:
+      - $ref: "/schemas/types.yaml#/definitions/uint8-matrix"
+      - maxItems: 16
+        items:
           items:
             - description: Power in dBm measured at the rf connector.
-              minimum: 0
-              maximum: 3
+#              minimum: -6
+#              maximum: 27
             - description: Digital gain.
               minimum: 0
               maximum: 3
@@ -55,10 +54,10 @@ properties:
               minimum: 0
               maximum: 3
             - description: DAC gain.
-              minimum: 0
+              minimum: 3
               maximum: 3
             - description: Mixer gain.
-              minimum: 0
+              minimum: 8
               maximum: 15
 
   radio-spi:
@@ -107,9 +106,9 @@ examples:
         reset-gpios = <&pioB 27 GPIO_ACTIVE_HIGH>;
         spi-max-frequency = <8000000>;
 
-        semtech,power-lut = [ 00 00 00 03 09
-                              03 00 00 03 0C
-                              04 00 00 03 0D ];
+        semtech,power-lut = /bits/ 8 < 0xFD 0 0 3  9 >,
+                                     <    3 0 0 3 12 >,
+                                     <    4 0 0 3 13 >;
 
         radio-spi {
           #address-cells = <1>;
