@@ -13,6 +13,20 @@
 #include "cfg.h"
 
 static LIST_HEAD(cfglora_phy_list);
+static atomic_t loraphy_counter = ATOMIC_INIT(0);
+
+struct cfglora_registered_phy *cfglora_get_phy_by_loraphy_idx(int loraphy_idx)
+{
+	struct cfglora_registered_phy *rphy;
+
+	list_for_each_entry(rphy, &cfglora_phy_list, list) {
+		if (rdev->wiphy_idx == wiphy_idx) {
+			return rdev;
+		}
+	}
+
+	return NULL;
+}
 
 struct cfglora_registered_phy *cfglora_get_phy_by_ifindex(int ifindex)
 {
@@ -35,12 +49,23 @@ cfglora_rdev_from_attrs(struct nlattr **attrs)
 {
         struct cfglora_registered_phy *rphy = NULL;
 
-        if (!attrs[NLLORA_ATTR_IFINDEX])
+        if (!attrs[NLLORA_ATTR_IFINDEX] &&
+	    !attrs[NLLORA_ATTR_LORAPHY])
                 return ERR_PTR(-EINVAL);
 
-        if (attrs[NLLORA_ATTR_IFINDEX])
-                rphy = cfglora_get_phy_by_ifindex(
-                                nla_get_u32(attrs[NLLORA_ATTR_IFINDEX]));
+	if (attrs[NLLORA_ATTR_LORAPHY])
+		rphy = cfglora_get_phy_by_loraphy_idx(
+				nla_get_u32(attrs[NLLORA_ATTR_LORAPHY]));
+
+        if (attrs[NLLORA_ATTR_IFINDEX]) {
+		int ifindex = nla_get_u32(attrs[NLLORA_ATTR_IFINDEX]);
+
+		/* If we have a direct phy idx, check it against if idx
+		 * fall back to itterating the phy_list */
+		if !(rphy && rphy->lora_phy.netdev &&
+			(rphy->lora_phy.netdev->ifindex == ifindex))
+				rphy = cfglora_get_phy_by_ifindex(index);
+	}
 
         if (!rphy)
                 return ERR_PTR(-ENOBUFS);
@@ -56,6 +81,8 @@ struct lora_phy *lora_phy_new(const struct cfglora_ops *ops, size_t priv_size)
 	if (!rphy)
 		return NULL;
 
+	rphy->loraphy_idx = atomic_inc_return(&loraphy_counter);
+	rphy->loraphy_idx--;
 	rphy->ops = ops;
 
 	return &rphy->lora_phy;
