@@ -5,6 +5,7 @@
 
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/nllora.h>
 #include <linux/rculist.h>
 #include <linux/slab.h>
 #include <net/cfglora.h>
@@ -20,8 +21,8 @@ struct cfglora_registered_phy *cfglora_get_phy_by_loraphy_idx(int loraphy_idx)
 	struct cfglora_registered_phy *rphy;
 
 	list_for_each_entry(rphy, &cfglora_phy_list, list) {
-		if (rdev->wiphy_idx == wiphy_idx) {
-			return rdev;
+		if (rphy->loraphy_idx == loraphy_idx) {
+			return rphy;
 		}
 	}
 
@@ -62,9 +63,9 @@ cfglora_rdev_from_attrs(struct nlattr **attrs)
 
 		/* If we have a direct phy idx, check it against if idx
 		 * fall back to itterating the phy_list */
-		if !(rphy && rphy->lora_phy.netdev &&
-			(rphy->lora_phy.netdev->ifindex == ifindex))
-				rphy = cfglora_get_phy_by_ifindex(index);
+		if (!(rphy && rphy->lora_phy.netdev &&
+			(rphy->lora_phy.netdev->ifindex == ifindex)))
+				rphy = cfglora_get_phy_by_ifindex(ifindex);
 	}
 
         if (!rphy)
