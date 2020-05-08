@@ -1700,7 +1700,7 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 	}
 
 	if (IS_ENABLED(CONFIG_OF)) {
-		power_lut = of_get_property(dev->of_node, "power-lut", &ret);
+		power_lut = of_get_property(dev->of_node, "semtech,power-lut", &ret);
 		if (power_lut && (ret % 5)) {
 			dev_err(dev, "Invalid power table\n");
 			return -EINVAL;
