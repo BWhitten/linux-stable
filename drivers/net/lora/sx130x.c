@@ -616,7 +616,10 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 		return ret;
 	}
 
-	val = BIT(4); /* with DAC gain=3 */
+	val = BIT(0);
+	val |= BIT(1);
+	val |= BIT(2);
+	val |= BIT(4); /* with DAC gain=3 */
 	if (false)
 		val |= BIT(5); /* SX1255 */
 
