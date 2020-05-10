@@ -1481,8 +1481,6 @@ static int sx130x_loradev_open(struct net_device *netdev)
 
 	netif_start_queue(netdev);
 
-	return 0;
-
 err_irq:
 err_open:
 err_firmware:
