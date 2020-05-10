@@ -88,6 +88,7 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	[F_SOFT_RESET]          = REG_FIELD(SX1301_PAGE, 7, 7),
 	/* GEN */
 	[F_MBWSSF_MODEM_EN]     = REG_FIELD(SX1301_GEN,  0, 0),
+	[F_CON_MODEM_EN]        = REG_FIELD(SX1301_GEN,  1, 1),
 	[F_FSK_MODEM_EN]        = REG_FIELD(SX1301_GEN,  2, 2),
 	[F_GLOBAL_EN]           = REG_FIELD(SX1301_GEN,  3, 3),
 	/* CKEN */
@@ -993,6 +994,17 @@ static int sx130x_loradev_open(struct net_device *netdev)
 		goto err_freq;
 
 	/* TODO PPM, and modem enable */
+	ret = regmap_write(priv->regmap, SX1301_MISC_CFG2, 0x60);
+	if (ret) {
+		dev_err(priv->dev, "PPM offset failed\n");
+		goto err_freq;
+	}
+
+	ret = sx130x_field_force_write(priv, F_CON_MODEM_EN, 1);
+	if (ret) {
+		dev_err(priv->dev, "enable connectrator modem failed\n");
+		goto err_freq;
+	}
 
 	/* TODO turn on IF8 */
 	ret = sx130x_set_STD_channel(priv);
