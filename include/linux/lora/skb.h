@@ -10,6 +10,13 @@
 #include <linux/types.h>
 #include <linux/skbuff.h>
 
+enum lora_crc_stat {
+	LORA_CRC_OK,
+	LORA_CRC_BAD,
+	LORA_NO_CRC,
+	UNDEFINED
+};
+
 struct lora_skb_priv {
 	int ifindex;
 
@@ -22,8 +29,9 @@ struct lora_skb_priv {
 
 	s8 power;
 
-	u8 snr;
-	u8 rssi;
+	s8 snr;
+	s8 rssi;
+	enum lora_crc_stat crc;
 };
 
 static inline struct lora_skb_priv *lora_skb_prv(struct sk_buff *skb)
