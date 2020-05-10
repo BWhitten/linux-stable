@@ -586,6 +586,23 @@ static int sx130x_agc_calibrate(struct sx130x_priv *priv)
 	return 0;
 }
 
+static int sx130x_enable_correlators(struct sx130x_priv *priv)
+{
+	int ret;
+	int i;
+
+	for (i = 0; i < 8; i++) {
+		/* Multi */
+		ret = regmap_write(priv->regmap, SX1301_COR0DETEN + i, 0x7E);
+		if (ret) {
+			dev_err(priv->dev, "correlator %d setup failed\n", i);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 static int sx130x_load_all_firmware(struct sx130x_priv *priv)
 {
 	const struct firmware *fw;
@@ -971,6 +988,9 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	}
 
 	/* TODO enable the correlator on enabled frequencies */
+	ret = sx130x_enable_correlators(priv);
+	if (ret)
+		goto err_freq;
 
 	/* TODO PPM, and modem enable */
 
