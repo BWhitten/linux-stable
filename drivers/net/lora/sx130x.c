@@ -286,11 +286,13 @@ static int sx130x_load_firmware(struct sx130x_priv *priv, int mcu, const struct 
 		return ret;
 	}
 
+	regcache_cache_bypass(priv->regmap, true);
 	ret = regmap_noinc_write(priv->regmap, SX1301_MPD, fw->data, fw->size);
 	if (ret) {
 		dev_err(priv->dev, "MCU prom data write failed\n");
 		return ret;
 	}
+	regcache_cache_bypass(priv->regmap, false);
 
 	ret = regmap_read(priv->regmap, SX1301_MPD, &val);
 	if (ret) {
@@ -302,12 +304,14 @@ static int sx130x_load_firmware(struct sx130x_priv *priv, int mcu, const struct 
 	if (!buf)
 		return -ENOMEM;
 
+	regcache_cache_bypass(priv->regmap, true);
 	ret = regmap_noinc_read(priv->regmap, SX1301_MPD, buf, fw->size);
 	if (ret) {
 		dev_err(priv->dev, "MCU prom data read failed\n");
 		kfree(buf);
 		return ret;
 	}
+	regcache_cache_bypass(priv->regmap, false);
 
 	if (memcmp(fw->data, buf, fw->size)) {
 		dev_err(priv->dev, "MCU prom data read does not match data written\n");
