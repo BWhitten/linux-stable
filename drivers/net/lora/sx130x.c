@@ -87,6 +87,8 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	/* PAGE */
 	[F_SOFT_RESET]          = REG_FIELD(SX1301_PAGE, 7, 7),
 	/* GEN */
+	[F_MBWSSF_MODEM_EN]     = REG_FIELD(SX1301_GEN,  0, 0),
+	[F_FSK_MODEM_EN]        = REG_FIELD(SX1301_GEN,  2, 2),
 	[F_GLOBAL_EN]           = REG_FIELD(SX1301_GEN,  3, 3),
 	/* CKEN */
 	[F_CLK32M_EN]           = REG_FIELD(SX1301_CKEN, 0, 0),
@@ -142,6 +144,7 @@ static const struct reg_field sx130x_regmap_fields[] = {
 
 	[F_FSK_MODEM_INVERT_IQ] = REG_FIELD(SX1301_IQCFG, 5, 5),
 
+	[F_FSK_PSIZE] = REG_FIELD(SX1301_FSK_CFG2, 0, 2),
 	[F_FSK_CRC_EN] = REG_FIELD(SX1301_FSK_CFG2, 3, 3),
 	[F_FSK_DCFREE_ENC] = REG_FIELD(SX1301_FSK_CFG2, 4, 5),
 	[F_FSK_ERROR_OSR_TOL] = REG_FIELD(SX1301_FSK_ERROR_OSR_TOL, 0, 4),
@@ -159,6 +162,7 @@ static const struct reg_field sx130x_regmap_fields[] = {
 	[F_TX_FRAME_SYNCH_PEAK2_POS] = REG_FIELD(SX1301_TX_FRAME_SYNCH, 4, 7),
 
 	[F_FSK_TX_GAUSSIAN_SELECT_BT] = REG_FIELD(SX1301_FSK_TX, 1, 2),
+	[F_FSK_TX_PSIZE] = REG_FIELD(SX1301_FSK_TX, 5, 7),
 };
 
 struct sx130x_tx_gain_lut {
@@ -788,6 +792,85 @@ static netdev_tx_t sx130x_loradev_start_xmit(struct sk_buff *skb, struct net_dev
 	return NETDEV_TX_OK;
 }
 
+static int sx130x_set_channel(struct sx130x_priv *priv, int chan, int offset)
+{
+	int ret;
+
+	ret = regmap_write(priv->regmap, SX1301_IF0L + (chan * 2),
+				IF_HZ_TO_REG(offset) & 0xFF);
+	if (ret) {
+		dev_err(priv->dev, "IF%dL failed\n", chan);
+		return ret;
+	}
+	ret = regmap_write(priv->regmap, SX1301_IF0H + (chan * 2),
+				(IF_HZ_TO_REG(offset) >> 8) & 0xFF);
+	if (ret) {
+		dev_err(priv->dev, "IF%dH failed\n", chan);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int sx130x_set_STD_channel(struct sx130x_priv *priv)
+{
+	int ret;
+
+	ret = sx130x_set_channel(priv, 8, -200000);
+	if (ret) {
+		return ret;
+	}
+
+	ret = sx130x_field_force_write(priv, F_MBWSSF_MODEM_EN, 0);
+	if (ret) {
+		dev_err(priv->dev, "diable MBWSSF modem failed\n");
+		return ret;
+	}
+
+	return ret;
+}
+
+static int sx130x_set_FSK_channel(struct sx130x_priv *priv)
+{
+	int ret;
+	uint8_t sync_word_size = 3;
+	uint64_t sync_word = 0xC194C1;
+	uint64_t sync_word_reg;
+
+	ret = sx130x_set_channel(priv, 9, 300000);
+	if (ret) {
+		return ret;
+	}
+
+	ret = sx130x_field_write(priv, F_FSK_PSIZE, sync_word_size-1);
+	if (ret) {
+		dev_err(priv->dev, "sync word size failed\n");
+		return ret;
+	}
+
+	ret = sx130x_field_write(priv, F_FSK_TX_PSIZE, sync_word_size-1);
+	if (ret) {
+		dev_err(priv->dev, "sync word size failed\n");
+		return ret;
+	}
+
+	sync_word_reg = sync_word << (8 * (8 - sync_word_size));
+	ret = regmap_bulk_write(priv->regmap, SX1301_FSK_REF_PATTERN_LSB,
+			        &sync_word_reg, 8);
+	if (ret) {
+		dev_err(priv->dev, "sync word size failed\n");
+		return ret;
+	}
+
+	ret = sx130x_field_force_write(priv, F_FSK_MODEM_EN, 0);
+	if (ret) {
+		dev_err(priv->dev, "diable FSK modem failed\n");
+		return ret;
+	}
+
+	return ret;
+}
+
 static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
@@ -847,14 +930,62 @@ static int sx130x_loradev_open(struct net_device *netdev)
 	/* TODO Configure lora multi demods, bitfield of active */
 
 	/* TODO Load concentrator multi channel frequencies */
+	ret = sx130x_set_channel(priv, 0, -400000);
+	if (ret) {
+		goto err_freq;
+	}
+
+	ret = sx130x_set_channel(priv, 1, -200000);
+	if (ret) {
+		goto err_freq;
+	}
+
+	ret = sx130x_set_channel(priv, 2, 0);
+	if (ret) {
+		goto err_freq;
+	}
+
+	ret = sx130x_set_channel(priv, 3, -400000);
+	if (ret) {
+		goto err_freq;
+	}
+
+	ret = sx130x_set_channel(priv, 4, -200000);
+	if (ret) {
+		goto err_freq;
+	}
+
+	ret = sx130x_set_channel(priv, 5, 0);
+	if (ret) {
+		goto err_freq;
+	}
+
+	ret = sx130x_set_channel(priv, 6, 200000);
+	if (ret) {
+		goto err_freq;
+	}
+
+	ret = sx130x_set_channel(priv, 7, 400000);
+	if (ret) {
+		goto err_freq;
+	}
 
 	/* TODO enable the correlator on enabled frequencies */
 
 	/* TODO PPM, and modem enable */
 
 	/* TODO turn on IF8 */
+	ret = sx130x_set_STD_channel(priv);
+	if (ret) {
+		goto err_freq;
+	}
 
 	/* TODO turn on FSK IF9 */
+	ret = sx130x_set_FSK_channel(priv);
+	if (ret) {
+		goto err_freq;
+	}
+
 	ret = sx130x_load_all_firmware(priv);
 	if (ret)
 		goto err_firmware;

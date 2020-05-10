@@ -33,6 +33,7 @@
 
 /* Calibrated value for 500KHz BW and notch filter disabled */
 #define TX_START_DELAY_DEFAULT  1497
+#define IF_HZ_TO_REG(f)     (f << 5)/15625
 
 /* Page independent */
 #define SX1301_PAGE     0x00
@@ -52,6 +53,26 @@
 /* Page 0 */
 #define SX1301_IQCFG        (SX1301_PAGE_BASE(0) + 0x21)
 #define SX1301_CHRS         (SX1301_PAGE_BASE(0) + 0x23)
+#define SX1301_IF0L         (SX1301_PAGE_BASE(0) + 0x24)
+#define SX1301_IF0H         (SX1301_PAGE_BASE(0) + 0x25)
+#define SX1301_IF1L         (SX1301_PAGE_BASE(0) + 0x26)
+#define SX1301_IF1H         (SX1301_PAGE_BASE(0) + 0x27)
+#define SX1301_IF2L         (SX1301_PAGE_BASE(0) + 0x28)
+#define SX1301_IF2H         (SX1301_PAGE_BASE(0) + 0x29)
+#define SX1301_IF3L         (SX1301_PAGE_BASE(0) + 0x2A)
+#define SX1301_IF3H         (SX1301_PAGE_BASE(0) + 0x2B)
+#define SX1301_IF4L         (SX1301_PAGE_BASE(0) + 0x2C)
+#define SX1301_IF4H         (SX1301_PAGE_BASE(0) + 0x2D)
+#define SX1301_IF5L         (SX1301_PAGE_BASE(0) + 0x2E)
+#define SX1301_IF5H         (SX1301_PAGE_BASE(0) + 0x2F)
+#define SX1301_IF6L         (SX1301_PAGE_BASE(0) + 0x30)
+#define SX1301_IF6H         (SX1301_PAGE_BASE(0) + 0x31)
+#define SX1301_IF7L         (SX1301_PAGE_BASE(0) + 0x32)
+#define SX1301_IF7H         (SX1301_PAGE_BASE(0) + 0x33)
+#define SX1301_IF8L         (SX1301_PAGE_BASE(0) + 0x34)
+#define SX1301_IF8H         (SX1301_PAGE_BASE(0) + 0x35)
+#define SX1301_IF9L         (SX1301_PAGE_BASE(0) + 0x36)
+#define SX1301_IF9H         (SX1301_PAGE_BASE(0) + 0x37)
 #define SX1301_CORR_CFG     (SX1301_PAGE_BASE(0) + 0x4E)
 #define SX1301_MODEM_START_RDX4L (SX1301_PAGE_BASE(0) + 0x51)
 #define SX1301_MODEM_START_RDX4H (SX1301_PAGE_BASE(0) + 0x52)
@@ -81,6 +102,8 @@
 #define SX1301_FSK_CFG1             (SX1301_PAGE_BASE(1) + 0x3F)
 #define SX1301_FSK_CFG2             (SX1301_PAGE_BASE(1) + 0x40)
 #define SX1301_FSK_ERROR_OSR_TOL    (SX1301_PAGE_BASE(1) + 0x41)
+#define SX1301_FSK_REF_PATTERN_LSB  (SX1301_PAGE_BASE(1) + 0x44)
+#define SX1301_FSK_REF_PATTERN_MSB  (SX1301_PAGE_BASE(1) + 0x48)
 #define SX1301_FSK_PKT_LENGTH       (SX1301_PAGE_BASE(1) + 0x4C)
 #define SX1301_FSK_TX               (SX1301_PAGE_BASE(1) + 0x4D)
 #define SX1301_FSK_PATTERN_TIMEOUT_CFGL (SX1301_PAGE_BASE(1) + 0x53)
@@ -108,6 +131,8 @@
 
 enum sx130x_fields {
 	F_SOFT_RESET,
+	F_MBWSSF_MODEM_EN,
+	F_FSK_MODEM_EN,
 	F_GLOBAL_EN,
 	F_CLK32M_EN,
 	F_RADIO_A_EN,
@@ -154,6 +179,7 @@ enum sx130x_fields {
 
 	F_FSK_RSSI_LENGTH,
 	F_FSK_PKT_MODE,
+	F_FSK_PSIZE,
 	F_FSK_CRC_EN,
 	F_FSK_DCFREE_ENC,
 	F_FSK_ERROR_OSR_TOL,
@@ -169,6 +195,7 @@ enum sx130x_fields {
 	F_TX_FRAME_SYNCH_PEAK2_POS,
 
 	F_FSK_TX_GAUSSIAN_SELECT_BT,
+	F_FSK_TX_PSIZE,
 };
 
 struct regmap *sx130x_get_regmap(struct device *dev);
