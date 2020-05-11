@@ -129,17 +129,11 @@ static const struct nla_policy nllora_policy[NLLORA_ATTR_MAX + 1] = {
 static int nllora_pre_doit(const struct genl_ops *ops, struct sk_buff *skb,
 			   struct genl_info *info)
 {
-	struct nlattr **attrs = info->attrs;
-
 	if (ops->internal_flags & NLLORA_FLAG_NEED_PHY) {
 		struct cfglora_registered_phy *rphy;
-		int ifindex = -1;
 
-		if (attrs[NLLORA_ATTR_IFINDEX])
-			ifindex = nla_get_u32(attrs[NLLORA_ATTR_IFINDEX]);
-
-		rphy = cfglora_get_phy_by_ifindex(ifindex);
-		if (!rphy)
+		rphy = cfglora_rphy_from_attrs(info->attrs);
+		if (IS_ERR(rphy))
 			return -ENODEV;
 
 		info->user_ptr[0] = rphy;

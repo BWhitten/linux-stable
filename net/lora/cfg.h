@@ -10,6 +10,8 @@
 struct cfglora_registered_phy {
 	struct list_head list;
 
+	int loraphy_idx;
+
 	const struct cfglora_ops *ops;
 
 	/* keep this last */
@@ -22,6 +24,7 @@ static inline struct cfglora_registered_phy *to_registered_phy(struct lora_phy *
 }
 
 struct cfglora_registered_phy *cfglora_get_phy_by_ifindex(int ifindex);
+struct cfglora_registered_phy *cfglora_rphy_from_attrs(struct nlattr **attrs);
 
 int __init nllora_init(void);
 void __exit nllora_exit(void);
