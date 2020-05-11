@@ -25,7 +25,6 @@ static struct genl_family nllora_fam;
 static int nllora_cmd_get_freq(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nlattr **attrs = info->attrs;
-	bool have_ifindex = attrs[NLLORA_ATTR_IFINDEX];
 	struct sk_buff *msg;
 	struct cfglora_registered_phy *rphy;
 	void *hdr;
@@ -33,12 +32,9 @@ static int nllora_cmd_get_freq(struct sk_buff *skb, struct genl_info *info)
 	int ifindex = -1;
 	int ret;
 
-	if (have_ifindex)
-		ifindex = nla_get_u32(attrs[NLLORA_ATTR_IFINDEX]);
-
-	rphy = cfglora_get_phy_by_ifindex(ifindex);
-	if (!rphy)
-		return -ENOBUFS;
+	rphy = cfglora_rdev_from_attrs(info->attrs);
+	if (IS_ERR(rphy))
+		return PTR_ERR(rphy);
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg) {

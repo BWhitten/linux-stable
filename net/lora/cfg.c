@@ -5,6 +5,7 @@
 
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/nllora.h>
 #include <linux/rculist.h>
 #include <linux/slab.h>
 #include <net/cfglora.h>
@@ -28,6 +29,24 @@ struct cfglora_registered_phy *cfglora_get_phy_by_ifindex(int ifindex)
 	}
 
 	return NULL;
+}
+
+struct cfglora_registered_phy *
+cfglora_rdev_from_attrs(struct nlattr **attrs)
+{
+        struct cfglora_registered_phy *rphy = NULL;
+
+        if (!attrs[NLLORA_ATTR_IFINDEX])
+                return ERR_PTR(-EINVAL);
+
+        if (attrs[NLLORA_ATTR_IFINDEX])
+                rphy = cfglora_get_phy_by_ifindex(
+                                nla_get_u32(attrs[NLLORA_ATTR_IFINDEX]));
+
+        if (!rphy)
+                return ERR_PTR(-ENOBUFS);
+
+        return rphy;
 }
 
 struct lora_phy *lora_phy_new(const struct cfglora_ops *ops, size_t priv_size)
