@@ -10,6 +10,8 @@
 struct cfglora_registered_phy {
 	struct list_head list;
 
+	int loraphy_idx;
+
 	const struct cfglora_ops *ops;
 
 	/* keep this last */
