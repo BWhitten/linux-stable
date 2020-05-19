@@ -272,6 +272,7 @@ struct sx130x_priv {
 	struct sk_buff *tx_skb;
 	struct workqueue_struct *wq;
 	struct work_struct tx_work;
+	struct delayed_work rx_work;
 };
 
 struct regmap *sx130x_get_regmap(struct device *dev)
@@ -1098,6 +1099,37 @@ static void sx130x_tx_work_handler(struct work_struct *ws)
 		netif_wake_queue(netdev);
 }
 
+static int sx130x_rx_packets(struct sx130x_priv *priv)
+{
+	struct net_device *netdev = dev_get_drvdata(priv->dev);
+	int ret = 0;
+
+	netdev_dbg(netdev, "%s\n", __func__);
+	return ret;
+}
+
+static irqreturn_t sx130x_rx_gpio_interrupt(int irq, void *dev_id)
+{
+	struct net_device *netdev = dev_id;
+	struct sx130x_priv *priv = netdev_priv(netdev);
+	int ret;
+
+	netdev_dbg(netdev, "%s\n", __func__);
+
+	ret = sx130x_rx_packets(priv);
+
+	return IRQ_HANDLED;
+}
+
+static void sx130x_rx_work_handler(struct work_struct *ws)
+{
+	struct sx130x_priv *priv = container_of(ws, struct sx130x_priv, rx_work.work);
+	int ret;
+
+	ret = sx130x_rx_packets(priv);
+	schedule_delayed_work(&priv->rx_work, msecs_to_jiffies(10));
+}
+
 static int sx130x_set_channel(struct sx130x_priv *priv, int chan, int offset)
 {
 	int ret;
@@ -1181,7 +1213,7 @@ static int sx130x_loradev_open(struct net_device *netdev)
 {
 	struct sx130x_priv *priv = netdev_priv(netdev);
 	unsigned int x;
-	int ret;
+	int ret, irq;
 
 	netdev_dbg(netdev, "%s", __func__);
 
@@ -1327,6 +1359,24 @@ static int sx130x_loradev_open(struct net_device *netdev)
 				   WQ_FREEZABLE | WQ_MEM_RECLAIM, 0);
 	INIT_WORK(&priv->tx_work, sx130x_tx_work_handler);
 
+	/* If we have the gpio then used interrupt based rx */
+	if (priv->gpio[0]) {
+		irq = gpiod_to_irq(priv->gpio[0]);
+		if (irq <= 0)
+			netdev_warn(netdev, "Failed to obtain interrupt for GPIO0 (%d)\n", irq);
+		else {
+			netdev_info(netdev, "Succeeded in obtaining interrupt for GPIO0: %d\n", irq);
+			ret = request_threaded_irq(irq, NULL, sx130x_rx_gpio_interrupt, IRQF_ONESHOT | IRQF_TRIGGER_RISING, netdev->name, netdev);
+			if (ret) {
+				netdev_err(netdev, "Failed to request interrupt for GPIO0 (%d)\n", ret);
+				return ret;
+			}
+		}
+	} else {
+		INIT_DELAYED_WORK(&priv->rx_work, sx130x_rx_work_handler);
+		schedule_delayed_work(&priv->rx_work, msecs_to_jiffies(10));
+	}
+
 	netif_start_queue(netdev);
 
 	return 0;
@@ -1348,6 +1398,7 @@ static int sx130x_loradev_stop(struct net_device *netdev)
 	netdev_dbg(netdev, "%s", __func__);
 
 	netif_stop_queue(netdev);
+	cancel_delayed_work_sync(&priv->rx_work);
 	close_loradev(netdev);
 
 	destroy_workqueue(priv->wq);
