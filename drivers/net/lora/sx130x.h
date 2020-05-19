@@ -44,6 +44,11 @@
 #define SX1301_TX_DATA_BUF_DATA 0x06
 #define SX1301_MPA      0x09
 #define SX1301_MPD      0x0A
+#define SX1301_RPNS     0x0B
+#define SX1301_RPAPL    0x0C
+#define SX1301_RPAPH    0x0D
+#define SX1301_RPS      0x0E
+#define SX1301_RPPS     0x0F
 #define SX1301_GEN      0x10
 #define SX1301_CKEN     0x11
 #define SX1301_GPSO     0x1C
