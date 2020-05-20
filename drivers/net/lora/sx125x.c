@@ -29,6 +29,19 @@ enum sx125x_fields {
 	F_TX_DAC_CLK_SEL,
 	F_SX1257_XOSC_GM_STARTUP,
 	F_SX1257_XOSC_DISABLE_CORE,
+	F_TX_DAC_GAIN,
+	F_TX_MIXER_GAIN,
+	F_TX_PLL_BW,
+	F_TX_ANA_BW,
+	F_TX_DAC_BW,
+	F_RX_LNA_GAIN,
+	F_RX_BB_GAIN,
+	F_RX_LNA_Z_IN,
+	F_RX_PLL_BW,
+	F_RX_ADC_BW,
+	F_RX_ADC_TRIM,
+	F_RX_BB_BW,
+	F_RX_ADC_TEMP,
 };
 
 static const struct reg_field sx125x_regmap_fields[] = {
@@ -38,6 +51,46 @@ static const struct reg_field sx125x_regmap_fields[] = {
 	/* XOSC */ /* TODO maybe make this dynamic */
 	[F_SX1257_XOSC_GM_STARTUP]  = REG_FIELD(SX1257_XOSC, 0, 3),
 	[F_SX1257_XOSC_DISABLE_CORE]  = REG_FIELD(SX1257_XOSC, 5, 5),
+	/* TX_GAIN */
+	[F_TX_DAC_GAIN]    = REG_FIELD(SX125X_TX_GAIN, 4, 6),
+	[F_TX_MIXER_GAIN]  = REG_FIELD(SX125X_TX_GAIN, 0, 3),
+	/* TX_BW */
+	[F_TX_PLL_BW]      = REG_FIELD(SX125X_TX_BW, 5, 6),
+	[F_TX_ANA_BW]      = REG_FIELD(SX125X_TX_BW, 0, 4),
+	/* TX_DAC_BW */
+	[F_TX_DAC_BW]      = REG_FIELD(SX125X_TX_DAC_BW, 0, 2),
+	/* RX_ANA_GAIN */
+	[F_RX_LNA_GAIN]    = REG_FIELD(SX125X_RX_ANA_GAIN, 5, 7),
+	[F_RX_BB_GAIN]     = REG_FIELD(SX125X_RX_ANA_GAIN, 1, 4),
+	[F_RX_LNA_Z_IN]    = REG_FIELD(SX125X_RX_ANA_GAIN, 0, 0),
+	/* RX_BW */
+	[F_RX_ADC_BW]      = REG_FIELD(SX125X_RX_BW, 5, 7),
+	[F_RX_ADC_TRIM]    = REG_FIELD(SX125X_RX_BW, 2, 4),
+	[F_RX_BB_BW]       = REG_FIELD(SX125X_RX_BW, 0, 1),
+	/* RX_PLL_BW */
+	[F_RX_PLL_BW]      = REG_FIELD(SX125X_RX_PLL_BW, 1, 2),
+	[F_RX_ADC_TEMP]    = REG_FIELD(SX125X_RX_PLL_BW, 0, 0),
+};
+
+struct sx125x_fields_sequence {
+        enum sx125x_fields field;
+        u8 val;
+};
+
+static const struct sx125x_fields_sequence sx125x_regmap_fields_patch[] = {
+	{F_TX_MIXER_GAIN, 	14},
+	{F_TX_DAC_GAIN, 	2},
+	{F_TX_ANA_BW, 		0},
+	{F_TX_PLL_BW, 		1},
+	{F_TX_DAC_BW, 		5},
+	{F_RX_LNA_Z_IN, 	1},
+	{F_RX_BB_GAIN, 		12},
+	{F_RX_LNA_GAIN, 	1},
+	{F_RX_BB_BW, 		12},
+	{F_RX_ADC_TRIM, 	6},
+	{F_RX_ADC_BW, 		7},
+	{F_RX_ADC_TEMP, 	0},
+	{F_RX_PLL_BW, 		0},
 };
 
 struct sx125x_priv {
@@ -61,6 +114,27 @@ static int sx125x_field_write(struct sx125x_priv *priv,
 		enum sx125x_fields field_id, u8 val)
 {
 	return regmap_field_write(priv->regmap_fields[field_id], val);
+}
+
+static inline int sx125x_field_force_write(struct sx125x_priv *priv,
+                enum sx125x_fields field_id, u8 val)
+{
+        return regmap_field_force_write(priv->regmap_fields[field_id], val);
+}
+
+static int sx125x_fields_patch(struct sx125x_priv *priv)
+{
+        int i, ret;
+
+        for (i = 0; i < ARRAY_SIZE(sx125x_regmap_fields_patch); i++) {
+                ret = sx125x_field_force_write(priv,
+				sx125x_regmap_fields_patch[i].field,
+                                sx125x_regmap_fields_patch[i].val);
+                if (ret)
+                        break;
+        }
+
+        return ret;
 }
 
 static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap *regmap)
@@ -133,6 +207,12 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 			dev_err(dev, "xosc startup adjust failed\n");
 			return ret;
 		}
+	}
+
+	ret = sx125x_fields_patch(priv);
+	if (ret) {
+		dev_err(dev, "sx125x patching failed\n");
+		return ret;
 	}
 
 	dev_info(dev, "SX125x module probed\n");
