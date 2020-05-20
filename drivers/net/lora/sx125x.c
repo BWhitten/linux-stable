@@ -139,6 +139,7 @@ static int sx125x_fields_patch(struct sx125x_priv *priv)
 
 static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap *regmap)
 {
+	const char *rname = dev_name(dev);
 	struct sx125x_priv *priv;
 	unsigned int val;
 	int ret;
@@ -213,6 +214,41 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 	if (ret) {
 		dev_err(dev, "sx125x patching failed\n");
 		return ret;
+	}
+
+	if (true) {
+		u32 part_int, part_frac, freq;
+
+		if (rname[strlen(rname) - 1] == 'b') {
+			freq = 867500000;
+		} else {
+			freq = 868500000;
+		}
+
+		part_int = freq / (SX125X_32MHz_FRAC << 8);
+		part_frac = ((freq %
+			(SX125X_32MHz_FRAC << 8)) << 8) / SX125X_32MHz_FRAC;
+
+		ret = regmap_write(priv->regmap, SX125X_FRF_RX_MSB,
+				   0xFF & part_int);
+		if (ret) {
+			dev_err(dev, "RX MSB write failed\n");
+			return ret;
+		}
+
+		ret = regmap_write(priv->regmap, SX125X_FRF_RX_MID,
+				   0xFF & (part_frac >> 8));
+		if (ret) {
+			dev_err(dev, "RX MID write failed\n");
+			return ret;
+		}
+
+		ret = regmap_write(priv->regmap, SX125X_FRF_RX_LSB,
+				   0xFF & part_frac);
+		if (ret) {
+			dev_err(dev, "RX LSB write failed\n");
+			return ret;
+		}
 	}
 
 	dev_info(dev, "SX125x module probed\n");
