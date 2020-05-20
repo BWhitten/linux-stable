@@ -25,6 +25,10 @@
 #include "sx125x.h"
 
 enum sx125x_fields {
+	F_PA_DRIVER_EN,
+	F_TX_EN,
+	F_RX_EN,
+	F_STDBY_EN,
 	F_CLK_OUT,
 	F_TX_DAC_CLK_SEL,
 	F_SX1257_XOSC_GM_STARTUP,
@@ -42,9 +46,17 @@ enum sx125x_fields {
 	F_RX_ADC_TRIM,
 	F_RX_BB_BW,
 	F_RX_ADC_TEMP,
+	F_LOW_BAT_EN,
+	F_PLL_LOCK_RX,
+	F_PLL_LOCK_TX,
 };
 
 static const struct reg_field sx125x_regmap_fields[] = {
+	/* MODE */
+	[F_PA_DRIVER_EN]   = REG_FIELD(SX125X_MODE, 3, 3),
+	[F_TX_EN]          = REG_FIELD(SX125X_MODE, 2, 2),
+	[F_RX_EN]          = REG_FIELD(SX125X_MODE, 1, 1),
+	[F_STDBY_EN]       = REG_FIELD(SX125X_MODE, 0, 0),
 	/* CLK_SELECT */
 	[F_CLK_OUT]        = REG_FIELD(SX125X_CLK_SELECT, 1, 1),
 	[F_TX_DAC_CLK_SEL] = REG_FIELD(SX125X_CLK_SELECT, 0, 0),
@@ -70,6 +82,10 @@ static const struct reg_field sx125x_regmap_fields[] = {
 	/* RX_PLL_BW */
 	[F_RX_PLL_BW]      = REG_FIELD(SX125X_RX_PLL_BW, 1, 2),
 	[F_RX_ADC_TEMP]    = REG_FIELD(SX125X_RX_PLL_BW, 0, 0),
+	/* MODE_STATUS */
+	[F_LOW_BAT_EN]     = REG_FIELD(SX125X_MODE_STATUS, 2, 2),
+	[F_PLL_LOCK_RX]    = REG_FIELD(SX125X_MODE_STATUS, 1, 1),
+	[F_PLL_LOCK_TX]    = REG_FIELD(SX125X_MODE_STATUS, 0, 0),
 };
 
 struct sx125x_fields_sequence {
@@ -249,6 +265,38 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 			dev_err(dev, "RX LSB write failed\n");
 			return ret;
 		}
+	}
+
+	ret = sx125x_field_write(priv, F_STDBY_EN, 1);
+	if (ret) {
+		dev_err(dev, "setting standby enable failed\n");
+		return ret;
+	}
+
+	for (val = i = 0; !val && i < 5; i++) {
+		ret = sx125x_field_force_write(priv, F_RX_EN, 0);
+		if (ret) {
+			dev_err(dev, "setting RX enable failed\n");
+			return ret;
+		}
+
+		ret = sx125x_field_force_write(priv, F_RX_EN, 1);
+		if (ret) {
+			dev_err(dev, "setting RX enable failed\n");
+			return ret;
+		}
+
+		usleep_range(1000, 1200);
+		ret = regmap_field_read(priv->regmap_fields[F_PLL_LOCK_RX],
+					&val);
+		if (ret) {
+			dev_err(dev, "RX pll lock read failed (%d)\n", ret);
+			return ret;
+		}
+	}
+	if (!val) {
+		dev_err(dev, "RX PLL lock failed\n");
+		return -ETIMEDOUT;
 	}
 
 	dev_info(dev, "SX125x module probed\n");
