@@ -8,6 +8,14 @@
 #ifndef _SX125X_
 #define _SX125X_
 
+#define SX125X_32MHz_FRAC 15625 /* irreductible fraction for PLL register caculation */
+
+#define SX125X_FRF_RX_MSB	0x01
+#define SX125X_FRF_RX_MID	0x02
+#define SX125X_FRF_RX_LSB	0x03
+#define SX125X_FRF_TX_MSB	0x04
+#define SX125X_FRF_TX_MID	0x05
+#define SX125X_FRF_TX_LSB	0x06
 #define SX1255_VERSION		0x07
 #define SX125X_TX_GAIN		0x08
 #define SX125X_TX_BW		0x0A
