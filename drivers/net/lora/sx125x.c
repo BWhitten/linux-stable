@@ -193,7 +193,11 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 		dev_info(dev, "SX125x version: %02x\n", val);
 	}
 
-	if (false) {
+	/* If we a dt and providing fclk_out, or we are radio b */
+	if ((IS_ENABLED(CONFIG_OF) && of_property_match_string(dev->of_node,
+							"clock-output-names",
+							"fclk_out"))
+		||  rname[strlen(rname) - 1] == 'b') {
 		ret = sx125x_field_write(priv, F_CLK_OUT, 1);
 		if (ret) {
 			dev_err(dev, "enabling clock output failed\n");
@@ -201,13 +205,26 @@ static int __maybe_unused sx125x_regmap_probe(struct device *dev, struct regmap 
 		}
 
 		dev_info(dev, "enabling clock output\n");
+	} else {
+		ret = sx125x_field_write(priv, F_CLK_OUT, 0);
+		if (ret) {
+			dev_err(dev, "disabling clock output failed\n");
+			return ret;
+		}
+
+		dev_info(dev, "disabling clock output\n");
 	}
 
-	/* TODO Only needs setting on radio on the TX path */
-	ret = sx125x_field_write(priv, F_TX_DAC_CLK_SEL, 1);
-	if (ret) {
-		dev_err(dev, "clock select failed\n");
-		return ret;
+	/* If we a dt and accepting fclk_in, or we are radio a */
+	if ((IS_ENABLED(CONFIG_OF) && of_property_match_string(dev->of_node,
+							"clock-names",
+							"fclk_in"))
+		||  rname[strlen(rname) - 1] == 'a') {
+		ret = sx125x_field_write(priv, F_TX_DAC_CLK_SEL, 1);
+		if (ret) {
+			dev_err(dev, "clock select failed\n");
+			return ret;
+		}
 	}
 
 	dev_dbg(dev, "clk written\n");
