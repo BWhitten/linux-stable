@@ -190,6 +190,9 @@ struct sx130x_priv {
 	struct sx130x_tx_gain_lut tx_gain_lut[SX1301_TX_GAIN_LUT_MAX];
 	u8 tx_gain_lut_size;
 
+	struct mutex		cfg_lock;
+	u32					cfg_freq;
+
 	struct sk_buff *tx_skb;
 	struct workqueue_struct *wq;
 	struct work_struct tx_work;
@@ -1122,14 +1125,30 @@ int sx130x_lora_get_freq(struct lora_phy *phy, u32 *val)
 
 	netdev_dbg(phy->netdev, "%s", __func__);
 
+	mutex_lock(&priv->cfg_lock);
 	if (val)
-		*val = 868000000;
+		*val = priv->cfg_freq;
+	mutex_unlock(&priv->cfg_lock);
+
+	return 0;
+}
+
+int sx130x_lora_set_freq(struct lora_phy *phy, u32 val)
+{
+	struct sx130x_priv *priv = netdev_priv(phy->netdev);
+
+	netdev_dbg(phy->netdev, "%s", __func__);
+
+	mutex_lock(&priv->cfg_lock);
+	priv->cfg_freq = val;
+	mutex_unlock(&priv->cfg_lock);
 
 	return 0;
 }
 
 struct cfglora_ops sx130x_lora_device_ops = {
         .get_freq = sx130x_lora_get_freq,
+		.set_freq = sx130x_lora_set_freq,
 };
 
 int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
@@ -1158,6 +1177,7 @@ int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
 	lora_phy_register(priv->phy);
 
 	mutex_init(&priv->io_lock);
+	mutex_init(&priv->cfg_lock);
 
 	dev_set_drvdata(dev, netdev);
 	priv->dev = dev;
