@@ -194,6 +194,7 @@ struct sx130x_priv {
 	u32					cfg_freq;
 	u32					cfg_bandwidth;
 	u8					cfg_sf;
+	s32					cfg_tx_power;
 
 	struct sk_buff *tx_skb;
 	struct workqueue_struct *wq;
@@ -1202,6 +1203,33 @@ int sx130x_lora_set_sf(struct lora_phy *phy, u8 val)
 	return 0;
 }
 
+int sx130x_lora_get_tx_power(struct lora_phy *phy, s32 *val)
+{
+	struct sx130x_priv *priv = netdev_priv(phy->netdev);
+
+	netdev_dbg(phy->netdev, "%s", __func__);
+
+	mutex_lock(&priv->cfg_lock);
+	if (val)
+		*val = priv->cfg_tx_power;
+	mutex_unlock(&priv->cfg_lock);
+
+	return 0;
+}
+
+int sx130x_lora_set_tx_power(struct lora_phy *phy, s32 val)
+{
+	struct sx130x_priv *priv = netdev_priv(phy->netdev);
+
+	netdev_dbg(phy->netdev, "%s", __func__);
+
+	mutex_lock(&priv->cfg_lock);
+	priv->cfg_tx_power = val;
+	mutex_unlock(&priv->cfg_lock);
+
+	return 0;
+}
+
 struct cfglora_ops sx130x_lora_device_ops = {
         .get_freq = sx130x_lora_get_freq,
 		.set_freq = sx130x_lora_set_freq,
@@ -1209,6 +1237,8 @@ struct cfglora_ops sx130x_lora_device_ops = {
 		.set_bandwidth = sx130x_lora_set_bandwidth,
 		.set_sf = sx130x_lora_set_sf,
 		.get_sf = sx130x_lora_get_sf,
+		.set_tx_power = sx130x_lora_set_tx_power,
+		.get_tx_power = sx130x_lora_get_tx_power,
 };
 
 int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
