@@ -192,6 +192,7 @@ struct sx130x_priv {
 
 	struct mutex		cfg_lock;
 	u32					cfg_freq;
+	u32					cfg_bandwidth;
 
 	struct sk_buff *tx_skb;
 	struct workqueue_struct *wq;
@@ -1146,9 +1147,38 @@ int sx130x_lora_set_freq(struct lora_phy *phy, u32 val)
 	return 0;
 }
 
+int sx130x_lora_get_bandwidth(struct lora_phy *phy, u32 *val)
+{
+	struct sx130x_priv *priv = netdev_priv(phy->netdev);
+
+	netdev_dbg(phy->netdev, "%s", __func__);
+
+	mutex_lock(&priv->cfg_lock);
+	if (val)
+		*val = priv->cfg_bandwidth;
+	mutex_unlock(&priv->cfg_lock);
+
+	return 0;
+}
+
+int sx130x_lora_set_bandwidth(struct lora_phy *phy, u32 val)
+{
+	struct sx130x_priv *priv = netdev_priv(phy->netdev);
+
+	netdev_dbg(phy->netdev, "%s", __func__);
+
+	mutex_lock(&priv->cfg_lock);
+	priv->cfg_bandwidth = val;
+	mutex_unlock(&priv->cfg_lock);
+
+	return 0;
+}
+
 struct cfglora_ops sx130x_lora_device_ops = {
         .get_freq = sx130x_lora_get_freq,
 		.set_freq = sx130x_lora_set_freq,
+		.get_bandwidth = sx130x_lora_get_bandwidth,
+		.set_bandwidth = sx130x_lora_set_bandwidth,
 };
 
 int sx130x_early_probe(struct regmap *regmap, struct gpio_desc *rst)
