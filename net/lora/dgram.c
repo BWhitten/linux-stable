@@ -221,8 +221,10 @@ const struct proto_ops dgram_proto_ops = {
 	.ioctl		= dgram_ioctl,
 	.listen		= sock_no_listen,
 	.shutdown	= sock_no_shutdown,
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 8, 0)
 	.setsockopt	= sock_no_setsockopt,
 	.getsockopt	= sock_no_getsockopt,
+#endif
 	.sendmsg	= dgram_sendmsg,
 	.recvmsg	= sock_no_recvmsg,
 	.mmap		= sock_no_mmap,
