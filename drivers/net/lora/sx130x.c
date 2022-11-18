@@ -2043,6 +2043,12 @@ static const struct of_device_id sx130x_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, sx130x_dt_ids);
 #endif
 
+static const struct spi_device_id sx130x_spi_id[] = {
+	{ .name = "sx1301" },
+	{}
+};
+MODULE_DEVICE_TABLE(spi, sx130x_spi_id);
+
 static struct spi_driver sx130x_spi_driver = {
 	.driver = {
 		.name = "sx130x",
@@ -2050,6 +2056,7 @@ static struct spi_driver sx130x_spi_driver = {
 	},
 	.probe = sx130x_spi_probe,
 	.remove = sx130x_spi_remove,
+	.id_table = sx130x_spi_id,
 };
 
 static int __init sx130x_init(void)
